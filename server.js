@@ -31,7 +31,7 @@ import { SessionStore } from './lib/sessions.js';
 import { ChatMemoryStore } from './lib/chat-memory.js';
 import { QuotaGuard, DEFAULT_FREE_MODE, normalizeFreeMode, isRateOrOverloadError, buildFallbackOrder } from './lib/quota-guard.js';
 import { spawn } from 'node:child_process';
-import { SKILLS, recommendSkills, skillsPromptSection, skillsRuntime } from './public/skills.js';
+import { SKILLS, recommendSkills, skillsPromptSection, skillsRuntime, skillsProvides } from './public/skills.js';
 import {
   WorkflowStore, PROPOSE_LAYOUT_SYSTEM, buildProposeLayoutPrompt, parseProposeResponse,
   DISTRIBUTE_PROMPTS_SYSTEM, buildDistributePrompt, parseDistributeResponse, reconcileChecklist,
@@ -814,6 +814,7 @@ app.post('/api/workflow/verify-features', wrap(async (req, res) => {
     if (auto.length) await project.writeTests(auto);
   }
   const report = await verifyProject(project, { runBrowser: req.body?.runBrowser !== false });
+  await attachFieldErrors(report);
   const layout = await project.getLayout();
   const regionFiles = {};
   for (const { region: r } of flatten(layout)) {
@@ -1020,6 +1021,25 @@ app.put('/api/skills', wrap(async (req, res) => {
   const b = req.body || {};
   await project.writeSkills({ enabled: Array.isArray(b.enabled) ? b.enabled : cur.enabled, options: { ...cur.options, ...(b.options || {}) } });
   res.json(await skillsState());
+}));
+
+// ── 🐞 실사용 오류: 내보낸 앱에서 모은 오류 기록 가져오기 ──
+async function attachFieldErrors(report) {
+  report.fieldErrors = await project.activeFieldErrors();
+  if (report.fieldErrors.length) report.ok = false;
+  return report;
+}
+app.get('/api/field-errors', wrap(async (req, res) => res.json({ all: await project.readFieldErrors(), active: await project.activeFieldErrors() })));
+app.post('/api/field-errors/import', wrap(async (req, res) => {
+  const result = await project.importFieldErrors(req.body?.data);
+  logger.event('field-errors-import', result);
+  res.json({ ...result, all: await project.readFieldErrors(), active: await project.activeFieldErrors() });
+}));
+app.post('/api/field-errors/clear', wrap(async (req, res) => {
+  const { region, message } = req.body || {};
+  const list = await project.readFieldErrors();
+  await project.writeFieldErrors(message === undefined && region === undefined ? [] : list.filter((e) => !(e.message === message && e.region === (region ?? null))));
+  res.json({ all: await project.readFieldErrors(), active: await project.activeFieldErrors() });
 }));
 
 // ── 프로젝트 전체 프롬프트 ──
@@ -1673,6 +1693,7 @@ app.post('/api/regions/:id/generate', async (req, res) => {
       await project.writeRegion(id, Object.fromEntries(changed.map((k) => [k, result.candidate[k]])));
       await project.clearPending(id);
       logger.event('ai-saved', { region: id, files: changed, attempt: result.attempt, fromPlan: Boolean(projectRequest) });
+      await project.markFieldErrorsFixed(id).catch(() => {});
       await sessionStore().append(sessionKey, { role: 'assistant', status: 'ok', summary: `저장 완료 (${changed.join(', ') || '변경 없음'}): ${request.slice(0, 100)}` }).catch(() => {});
       await new ChatMemoryStore(project).append({
         kind: 'handoff',
@@ -1701,7 +1722,7 @@ app.get('/api/analysis/connections', wrap(async (req, res) => {
   const { out } = await leafSources('js');
   const appJs = await project.readShared('js');
   if (appJs.trim()) out['app.js'] = appJs;
-  res.json(scanConnections(out));
+  res.json(scanConnections(out, skillsProvides(await project.readSkills())));
 }));
 
 app.get('/api/analysis/appjs', wrap(async (req, res) => {
@@ -1997,6 +2018,7 @@ ${regions.join('\n\n')}
 
 app.post('/api/verify', wrap(async (req, res) => {
   const report = await verifyProject(project, { runBrowser: req.body?.runBrowser !== false });
+  await attachFieldErrors(report);
   logger.event('verify', { ok: report.ok, syntaxErrors: report.syntaxErrors.length, connectionIssues: report.connectionIssues.length, runtimeErrors: report.browser?.runtimeErrors?.length || 0 });
   const tests = report.browser?.testResults || [];
   const passed = tests.filter((t) => t.ok).length;
@@ -2022,6 +2044,7 @@ app.post('/api/regions/:id/pending/apply', wrap(async (req, res) => {
   await project.writeRegion(id, Object.fromEntries(changed.map((k) => [k, p.files[k]])));
   await project.clearPending(id);
   logger.event('ai-saved', { region: id, files: changed, reviewed: true });
+  await project.markFieldErrorsFixed(id).catch(() => {});
   res.json({ files: await project.readRegion(id) });
 }));
 

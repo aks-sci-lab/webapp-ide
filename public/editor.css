@@ -971,3 +971,8 @@ body:not(.pro-mode) .workspace[data-mode="preview"] .sidebar { display: none; }
 .form-analysis { margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--accent); border-radius: 10px; }
 .mini-table { width: 100%; border-collapse: collapse; margin: 6px 0 10px; font-size: 12px; }
 .mini-table th, .mini-table td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); }
+
+/* 🐞 실사용 오류 */
+#btnFieldErrors.has-errors { color: var(--danger); border-color: var(--danger); font-weight: 700; }
+.log-row.fe-row { display: flex; gap: 10px; align-items: flex-start; }
+.fe-row .log-text { flex: 1; min-width: 0; word-break: break-word; }

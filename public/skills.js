@@ -382,7 +382,7 @@ const BACKUP_RUNTIME = (showButton) => String.raw`(() => {
       const wrap = document.createElement('div');
       wrap.id = '__ideBackupFab';
       wrap.className = 'no-print';
-      wrap.innerHTML = '<button type="button" data-b="toggle" title="데이터 백업">💾</button><div data-b="menu" hidden><button type="button" data-b="save">백업 파일 저장</button><button type="button" data-b="load">백업 불러오기</button><small data-b="last"></small></div>';
+      wrap.innerHTML = '<button type="button" data-b="toggle" title="데이터 백업">💾</button><div data-b="menu" hidden><button type="button" data-b="save">백업 파일 저장</button><button type="button" data-b="load">백업 불러오기</button><button type="button" data-b="errors" hidden>오류 기록 저장</button><small data-b="last"></small></div>';
       const css = document.createElement('style');
       css.textContent = '#__ideBackupFab{position:fixed;right:14px;bottom:14px;z-index:2147483000;font:13px system-ui,"Malgun Gothic",sans-serif}#__ideBackupFab>button{width:40px;height:40px;border-radius:50%;border:1px solid #ccd;background:#fff;box-shadow:0 2px 8px rgba(0,0,0,.18);cursor:pointer;font-size:18px}#__ideBackupFab [data-b=menu]{position:absolute;right:0;bottom:48px;background:#fff;border:1px solid #ccd;border-radius:10px;padding:6px;display:flex;flex-direction:column;gap:4px;min-width:150px;box-shadow:0 4px 16px rgba(0,0,0,.16);color:#222}#__ideBackupFab [data-b=menu][hidden]{display:none}#__ideBackupFab [data-b=menu] button{border:0;background:#f3f4f8;border-radius:6px;padding:7px 10px;text-align:left;cursor:pointer}#__ideBackupFab small{color:#777;padding:2px 4px}';
       document.head.appendChild(css);
@@ -394,7 +394,13 @@ const BACKUP_RUNTIME = (showButton) => String.raw`(() => {
           menu.hidden = !menu.hidden;
           const last = A.backup.lastBackupAt();
           wrap.querySelector('[data-b=last]').textContent = last ? '마지막 백업: ' + new Date(last).toLocaleString('ko-KR') : '아직 백업한 적 없음';
+          const fe = window.__ideFieldErrors;
+          const n = fe ? fe.count() : 0;
+          const eb = wrap.querySelector('[data-b=errors]');
+          eb.hidden = !n;
+          eb.textContent = '오류 기록 저장 (' + n + '건)';
         } else if (b === 'save') { A.backup.download(); menu.hidden = true; }
+        else if (b === 'errors') { if (window.__ideFieldErrors) window.__ideFieldErrors.download(); menu.hidden = true; }
         else if (b === 'load') { try { await A.backup.restore(); } catch (err) { alert(err.message); } menu.hidden = true; }
       });
     };
@@ -449,6 +455,18 @@ export function skillsRuntime(skills) {
   if (on.has('formScan')) parts.push(FORM_RUNTIME);
   if (on.has('print')) parts.push(PRINT_RUNTIME);
   return parts.join('\n');
+}
+
+// 앱 런타임과 켜 둔 스킬이 스스로 보내는 이벤트·공유 상태 (연결 분석에서 "보내는 곳 없음" 오류로 보지 않게)
+export function skillsProvides(skills) {
+  const on = new Set(normalizeSkills(skills).enabled);
+  const events = ['app:ready', 'screen:change'];
+  const states = ['screen'];
+  if (on.has('roster')) { events.push('roster:loaded'); states.push('roster'); }
+  if (on.has('formScan')) { events.push('form:analyzed'); states.push('form'); }
+  if (on.has('backup')) events.push('store:saved', 'store:error', 'backup:saved', 'backup:restored');
+  if (on.has('print')) events.push('print:start');
+  return { events, states };
 }
 
 export function skillsCss(skills) {

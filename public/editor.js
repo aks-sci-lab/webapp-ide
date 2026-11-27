@@ -14,6 +14,7 @@ import { classifySmartRequest } from './smart-router.js';
 import { $, api, esc, toast, clientLog, setToastContext, dialog, confirmBox, promptBox } from './ui-core.js';
 import { initHistoryPanels } from './history-panels.js';
 import { initSkillsPanel } from './skills-panel.js';
+import { initFieldErrorsPanel, refreshFieldErrorBadge } from './field-errors-panel.js';
 
 // 미리보기 주소. localhost 와 127.0.0.1 은 브라우저에서 서로 다른 출처라 저장소(IndexedDB·localStorage)가 따로다.
 // 미리보기를 반대쪽 주소로 열어 미리보기 속 앱의 데이터가 IDE 와 섞이지 않게 한다 (⚙️ 설정에서 끌 수 있음)
@@ -5513,6 +5514,15 @@ $('#btnProMode')?.addEventListener('click', () => setProMode(!document.body.clas
 async function boot() {
   setToastContext(() => ({ selected: state.selected }));
   initHistoryPanels();
+  initFieldErrorsPanel({
+    // 실사용 오류 → 검증 세션에서 다시 검증(오류 목록 포함) → 실패 영역 자동 수정 루프
+    heal: async () => {
+      await switchSessionMode('verify');
+      await runVerifySession();
+      await runAutoHealLoop();
+      refreshFieldErrorBadge();
+    },
+  });
   initSkillsPanel({
     reloadPreview: () => reloadPreview(),
     appendAppPrompt: (text) => {
