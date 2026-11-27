@@ -958,3 +958,16 @@ body:not(.pro-mode) .workspace[data-mode="preview"] .sidebar { display: none; }
 .proj-thumb .mini { font-size: 9.5px; }
 .proj-meta { display: grid; gap: 2px; }
 .proj-title-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+/* 🧩 스킬 창 */
+.skill-list { display: grid; gap: 8px; margin-top: 8px; }
+.dlg-body label.skill-card { display: flex; gap: 10px; align-items: flex-start; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; cursor: pointer; }
+.skill-card.on { border-color: var(--accent); background: var(--accent-soft); }
+.dlg-body .skill-card input[type="checkbox"] { margin: 4px 0 0; padding: 0; flex: none; width: auto; }
+.skill-icon { font-size: 22px; line-height: 1; }
+.skill-text { flex: 1; line-height: 1.5; }
+.skill-text .btn { margin-top: 6px; }
+.dlg-body .skill-opt { display: inline-flex; gap: 6px; align-items: center; margin-top: 4px; font-size: 12px; }
+.form-analysis { margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--accent); border-radius: 10px; }
+.mini-table { width: 100%; border-collapse: collapse; margin: 6px 0 10px; font-size: 12px; }
+.mini-table th, .mini-table td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); }
