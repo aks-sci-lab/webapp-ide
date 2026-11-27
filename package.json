@@ -1,0 +1,21 @@
+{
+  "name": "webapp-ide",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "웹앱제작기 — 3대 세션(통합·영역별 병렬·검증) 기반 AI 웹앱 디자이너 & 통합 개발 환경",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test",
+    "verify-app": "node lib/app-verify.js",
+    "build:web": "node scripts/build-web.js"
+  },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^0.137.0",
+    "acorn": "^8.19.0",
+    "acorn-walk": "^8.3.5",
+    "codemirror": "^5.65.21",
+    "express": "^4.21.2",
+    "parse5": "^8.0.1"
+  }
+}

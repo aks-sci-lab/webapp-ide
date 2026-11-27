@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>웹앱제작기</title>
+<link rel="stylesheet" href="/vendor/codemirror/lib/codemirror.css">
+<link rel="stylesheet" href="/vendor/codemirror/addon/hint/show-hint.css">
+<link rel="stylesheet" href="/vendor/codemirror/addon/dialog/dialog.css">
+<link rel="stylesheet" href="/vendor/codemirror/theme/material-darker.css">
+<link rel="stylesheet" href="editor.css">
+<script src="/vendor/codemirror/lib/codemirror.js"></script>
+<script src="/vendor/codemirror/mode/xml/xml.js"></script>
+<script src="/vendor/codemirror/mode/javascript/javascript.js"></script>
+<script src="/vendor/codemirror/mode/css/css.js"></script>
+<script src="/vendor/codemirror/mode/htmlmixed/htmlmixed.js"></script>
+<script src="/vendor/codemirror/addon/edit/matchbrackets.js"></script>
+<script src="/vendor/codemirror/addon/edit/closebrackets.js"></script>
+<script src="/vendor/codemirror/addon/fold/xml-fold.js"></script>
+<script src="/vendor/codemirror/addon/edit/closetag.js"></script>
+<script src="/vendor/codemirror/addon/dialog/dialog.js"></script>
+<script src="/vendor/codemirror/addon/search/searchcursor.js"></script>
+<script src="/vendor/codemirror/addon/search/search.js"></script>
+<script src="/vendor/codemirror/addon/search/jump-to-line.js"></script>
+<script src="/vendor/codemirror/addon/hint/show-hint.js"></script>
+<script src="/vendor/codemirror/addon/hint/javascript-hint.js"></script>
+<script src="/vendor/codemirror/addon/hint/css-hint.js"></script>
+<script src="/vendor/codemirror/addon/hint/xml-hint.js"></script>
+<script src="/vendor/codemirror/addon/hint/html-hint.js"></script>
+<script src="/vendor/codemirror/addon/comment/comment.js"></script>
+<script src="/vendor/codemirror/addon/selection/active-line.js"></script>
+</head>
+<body>
+<header class="topbar">
+  <button id="btnProjectHub" class="btn ghost small" title="모든 웹앱 프로젝트 한눈에 보기 · 선택 · 미리보기">🗂 프로젝트</button>
+  <select id="projectSel" class="project-sel" title="프로젝트 빠른 전환"></select>
+  <button id="btnNewProject" class="btn ghost small" title="새 프로젝트 만들기">＋</button>
+  <button id="btnManageProject" class="btn ghost small" title="현재 프로젝트 저장 · 초기화 · 이름 변경 · 복제 · 삭제">⋮</button>
+  <input id="appName" class="app-name" title="앱 이름" spellcheck="false">
+  <span id="flowBadge" class="flow-badge" hidden title="가져온 앱은 원래 문서 순서대로 영역을 이어 붙입니다">가져온 앱</span>
+  <div class="seg" id="viewSeg" title="작업 화면 전환">
+    <button data-view="design">📐 레이아웃</button>
+    <button data-view="preview" class="on">👁 미리보기</button>
+  </div>
+  <span class="spacer"></span>
+  <button id="btnAiQaBot" class="btn primary small" title="내장 AI 검증 봇 실행 (가상 시나리오 2회 자동 검증 + 에이전트용 수정 리포트 복사)">🤖 AI 검증 봇</button>
+  <button id="btnQuickUndo" class="btn ghost small" title="가장 최근 백업 상태로 한 번에 되돌립니다">↩ 되돌리기</button>
+  <button id="btnExport" class="btn ghost small" title="단일 HTML 저장 · 웹 배포 안내">📦 내보내기</button>
+  <button id="btnProMode" class="btn ghost small" title="전문가 모드 켜기/끄기 (내장 AI 프롬프트 · 코드 편집 · 고급 도구)">🧪 전문가</button>
+  <details class="tools-menu pro-only" id="toolsMenu">
+    <summary class="btn ghost small" title="고급 개발·분석 도구">🛠 도구 ▾</summary>
+    <div class="tools-pop">
+      <button id="btnAppPrompt" class="btn ghost small">🧭 통합 프롬프트 패널</button>
+      <button id="btnImport" class="btn ghost small">📥 기존 HTML 가져오기</button>
+      <button id="btnShared" class="btn ghost small">🎨 공통 스타일 · 디자인 토큰</button>
+      <button id="btnVerify" class="btn ghost small">✅ 전체 자동 점검</button>
+      <button id="btnQuality" class="btn ghost small">♿ 접근성 · 성능 점검</button>
+      <button id="btnTests" class="btn ghost small">🧪 동작 테스트 편집</button>
+      <button id="btnAnalysis" class="btn ghost small">🔗 영역 연결 분석</button>
+      <button id="btnSnapshots" class="btn ghost small">🕘 백업 · 복원 목록</button>
+      <button id="btnLogs" class="btn ghost small">📜 작업 · AI 기록</button>
+    </div>
+  </details>
+  <input type="file" id="importFile" accept=".html,.htm" hidden>
+  <button id="quotaBadge" class="btn ghost small quota-pill" title="현재 연결된 AI 상태 · 클릭해서 AI 설정 열기">🤖 AI 확인 중…</button>
+  <button id="btnSettings" class="btn ghost small" title="AI 연결 · 모델 · 무료 한도 설정">⚙️ 설정</button>
+</header>
+
+<main class="workspace" id="workspace" data-mode="preview">
+  <aside class="sidebar">
+    <div class="side-section">
+      <div class="side-head"><span>화면(페이지)</span><button type="button" class="btn tiny ghost" id="btnAddScreen" title="화면 전환용 새 화면 추가">＋ 화면</button></div>
+      <div class="screen-bar" id="screenBar"></div>
+    </div>
+    <div class="side-head" style="margin-top:10px">영역 <span id="regionCount" class="muted"></span></div>
+    <ul id="regionList" class="region-list"></ul>
+    <p class="hint">영역을 누르면 해당 부분만 따로 수정할 수 있습니다.<br>
+      화면 배치는 상단 <b>📐 레이아웃</b>에서 언제든 펼칠 수 있습니다.</p>
+  </aside>
+
+  <section class="stage" id="stage">
+    <div class="stage-bar" id="stageBar">
+      <div class="preset-bar" id="layoutPresetBar" title="클릭 한 번으로 현재 화면 영역들의 배치 골격을 바꿉니다"></div>
+      <button type="button" class="btn ghost small" id="btnDenseGrid" title="격자를 24×24로 2배 촘촘하게 전환해 세밀하게 배치합니다">▦ 24×24 촘촘하게</button>
+      <div class="grid-ctrl" id="gridCtrl">
+        <label>열 <input id="gridCols" type="number" min="1" max="24"></label>
+        <label>행 <input id="gridRows" type="number" min="1" max="48"></label>
+        <label>간격 <input id="gridGap" type="number" min="0" max="48"></label>
+        <label title="켜면 화면 높이에 꽉 차는 앱 레이아웃, 끄면 스크롤되는 페이지"><input id="gridFill" type="checkbox"> 채우기</label>
+      </div>
+      <div class="seg" id="deviceSeg" title="화면 크기별 배치" hidden></div>
+      <span class="spacer"></span>
+      <button type="button" class="btn ghost small" id="btnCollapseLayout" title="레이아웃 캔버스를 접고 프롬프트 화면으로 돌아갑니다">✕ 레이아웃 접기</button>
+    </div>
+    <div class="crumbs" id="crumbs"></div>
+    <div class="canvas-wrap" id="canvasWrap">
+      <div class="canvas" id="canvas"></div>
+      <div class="companion-pane" id="companionPane" hidden></div>
+    </div>
+    <div class="canvas-ai-bar" id="canvasAiBar">
+      <input type="text" id="canvasAiInput" placeholder="💬 말로 배치 고치기 (예: 왼쪽 사이드바 더 좁게, 상단 헤더는 1칸 높이로, 하단 패널은 오른쪽으로)">
+      <button type="button" class="btn primary small" id="btnCanvasAiAdjust">✨ 배치 적용</button>
+    </div>
+    <div class="overlay-bar" id="overlayBar"></div>
+    <div class="preview-wrap" id="previewWrap">
+      <div class="preview-bar">
+        <span class="muted">미리보기</span>
+        <button id="btnInspect" class="btn small btn-inspect-hero" title="미리보기에서 수정할 요소를 클릭해 선택합니다 (Esc 종료)">🎯 요소 찍어 수정</button>
+        <label><input type="checkbox" id="showBounds"> 영역 경계</label>
+        <span id="liveReloadBadge" class="muted small-note" title="외부 에이전트가 파일을 수정하면 자동으로 새로고침됩니다">● 자동 갱신</span>
+        <span id="previewError" class="error-text"></span>
+        <span class="spacer"></span>
+        <button id="btnReload" class="btn ghost small">↻ 새로고침</button>
+        <a href="/preview" id="previewNewTab" target="_blank" class="btn ghost small">새 창 ↗</a>
+      </div>
+      <div class="preview-screens" id="previewScreenBar" hidden></div>
+      <div class="preview-main">
+        <div class="preview-iframe-col">
+          <iframe id="preview" title="미리보기"></iframe>
+        </div>
+        <aside class="preview-live-panel" id="previewLivePanel">
+          <div class="pl-head">
+            <b>📡 수정 · AI 대화 현황</b>
+            <span class="spacer"></span>
+            <button type="button" class="btn tiny ghost" id="btnCompactPr" title="지금까지의 대화와 세션 기록을 PR 요약으로 압축하고 원본은 로그에 보관합니다">📦 PR 요약</button>
+            <span id="plStateBadge" class="badge-soft">대기 중</span>
+          </div>
+          <div class="pl-target" id="plTargetBox" hidden></div>
+          <div class="pl-log" id="plLiveLog"><span class="muted">아래 입력창에 <b>수정 요청</b>이나 <b>질문</b>을 적으면 변경 진행 상황과 AI 답변·진행방향 선택지가 여기에 표시됩니다.</span></div>
+        </aside>
+      </div>
+      <div class="preview-prompt-bar" id="previewPromptBar">
+        <span id="ppTargetChip" class="chip" hidden></span>
+        <div class="pp-mode-seg" id="ppModeSeg" title="자동 판별, 질문만 하기, 바로 수정하기 중 선택">
+          <button type="button" class="pp-mode on" data-pp-mode="auto">자동</button>
+          <button type="button" class="pp-mode" data-pp-mode="question">💬 질문</button>
+          <button type="button" class="pp-mode" data-pp-mode="edit">✨ 수정</button>
+        </div>
+        <input type="text" id="previewPromptInput" placeholder="💬 질문하거나 수정할 내용을 적고 Enter (예: 이 화면은 어떻게 동작해? / 버튼 파란색으로 바꿔줘)">
+        <button type="button" class="btn primary pp-send-btn" id="btnPreviewPromptRun">✨ 전송</button>
+      </div>
+    </div>
+  </section>
+
+  <aside class="inspector" id="inspector"></aside>
+</main>
+
+<dialog id="dlg">
+  <form method="dialog" class="dlg-body">
+    <h3 id="dlgTitle"></h3>
+    <div id="dlgContent"></div>
+    <div class="dlg-actions">
+      <button value="cancel" class="btn ghost">취소</button>
+      <button value="ok" class="btn primary" id="dlgOk">저장</button>
+    </div>
+  </form>
+</dialog>
+
+<div id="toast" class="toast"></div>
+
+<script src="editor.js" type="module"></script>
+</body>
+</html>

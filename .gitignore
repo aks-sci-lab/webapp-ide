@@ -1,0 +1,11 @@
+node_modules/
+settings.json
+logs/
+projects/
+.webapp-ide-*.pid
+*.tmp
+dist/
+dist-web/
+.DS_Store
+Thumbs.db
+.firebase/
