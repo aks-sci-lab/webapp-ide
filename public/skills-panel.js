@@ -1,5 +1,6 @@
 // 🧩 스킬 창: 앱에 끼워 넣을 재사용 기능을 켜고 끄며, 학교 양식 파일을 미리 분석해 앱 설명에 넣는다.
 import { $, api, esc, toast, dialog } from './ui-core.js';
+import { SHEETS_SCRIPT, validSheetsOption } from './skills.js';
 
 let deps = { reloadPreview: () => {}, appendAppPrompt: () => {} };
 
@@ -42,6 +43,13 @@ async function openSkills() {
           <span class="skill-text"><b>${esc(k.title)}</b>${st.recommended.includes(k.id) && !st.enabled.includes(k.id) ? ' <span class="badge-soft">추천</span>' : ''}<br><span class="muted">${esc(k.desc)}</span>
           ${k.id === 'backup' ? `<br><span class="skill-opt"><input type="checkbox" data-opt="backupButton" ${st.options.backupButton ? 'checked' : ''}> 화면 오른쪽 아래에 💾 백업 버튼 보이기</span>` : ''}
           ${k.id === 'formScan' ? '<br><button type="button" class="btn small" data-form-analyze>📋 양식 파일 미리 분석하기</button>' : ''}
+          ${k.id === 'sheets' ? `<span class="skill-opt skill-opt-col">
+            <span>불러올 시트 주소 (공유: 링크가 있는 모든 사용자 → 뷰어)</span>
+            <input type="url" data-opt-text="sheetsUrl" placeholder="https://docs.google.com/spreadsheets/d/…" value="${esc(st.options.sheetsUrl || '')}">
+            <span>저장할 Apps Script 웹 앱 주소 (선택)</span>
+            <input type="url" data-opt-text="sheetsScript" placeholder="https://script.google.com/macros/s/…/exec" value="${esc(st.options.sheetsScript || '')}">
+            <span class="muted">비워 두면 앱을 쓰는 사람이 앱 화면의 ⚙ 시트 연결에서 넣습니다.</span>
+            <button type="button" class="btn small" data-copy-script>📋 Apps Script 코드 복사</button></span>` : ''}
           </span>
         </label>`).join('')}</div>
       <div id="formResult"></div>`;
@@ -65,9 +73,26 @@ async function openSkills() {
       save({ enabled: [...enabled] });
     } else if (t.dataset.opt) {
       save({ options: { [t.dataset.opt]: t.checked } });
+    } else if (t.dataset.optText) {
+      const v = t.value.trim();
+      if (!validSheetsOption(t.dataset.optText, v)) {
+        toast(t.dataset.optText === 'sheetsUrl' ? '구글 시트 주소(https://docs.google.com/spreadsheets/…)를 넣어 주세요' : 'Apps Script 웹 앱 주소(https://script.google.com/macros/s/…/exec)를 넣어 주세요', true);
+        return;
+      }
+      save({ options: { [t.dataset.optText]: v } });
     }
   });
   $('#skillsBody').addEventListener('click', async (ev) => {
+    if (ev.target.closest('[data-copy-script]')) {
+      ev.preventDefault();
+      try {
+        await navigator.clipboard.writeText(SHEETS_SCRIPT);
+        toast('Apps Script 코드를 복사했습니다. 시트 > 확장 프로그램 > Apps Script 에 붙여 넣고 웹 앱으로 배포하세요');
+      } catch {
+        toast('복사하지 못했습니다. 앱 화면의 ⚙ 시트 연결 창에서 코드를 볼 수 있습니다', true);
+      }
+      return;
+    }
     if (ev.target.closest('[data-form-analyze]')) {
       ev.preventDefault();
       try {

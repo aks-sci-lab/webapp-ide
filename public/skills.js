@@ -1,6 +1,9 @@
 // 스킬: 만든 웹앱에 끼워 넣는 재사용 기능 묶음.
 // 켜 둔 스킬은 빌드할 때 앱 런타임(window.app)에 붙고, 영역을 만드는 AI 에게 사용법이 함께 전달된다.
-// 저장 위치: projects/<이름>/skills.json  { enabled: ['print', ...], options: { backupButton: true } }
+// 저장 위치: projects/<이름>/skills.json  { enabled: ['print', ...], options: { backupButton: true, sheetsUrl, sheetsScript } }
+import { GRADES_RUNTIME, GROUPS_RUNTIME, GROUPS_CSS, TIMER_RUNTIME, TIMER_CSS, SHEETS_RUNTIME, SHEETS_CSS, SHEETS_SCRIPT, QR_RUNTIME, QR_CSS } from './skills-more.js';
+
+export { SHEETS_SCRIPT };
 
 export const SKILLS = [
   {
@@ -35,15 +38,66 @@ export const SKILLS = [
     keywords: ['양식', '서식', '템플릿', '제출', '보고', '나이스', '엑셀', '표'],
     default: false,
   },
+  {
+    id: 'grades',
+    icon: '📊',
+    title: '성적 합계·순위',
+    desc: '과목·영역 점수로 합계·평균·반영비율 환산 점수를 내고, 동점을 같은 등수로 매긴 석차·백분위·등급(9등급 또는 A~E)을 붙입니다. 과목별 평균·최고·최저·표준편차도 줍니다.',
+    keywords: ['성적', '점수', '채점', '석차', '순위', '등수', '등급', '평균', '합계', '수행평가', '반영비율', '환산'],
+    default: false,
+  },
+  {
+    id: 'groups',
+    icon: '🎲',
+    title: '모둠·자리 배치',
+    desc: '명단을 무작위 모둠(모둠 수 또는 인원수)으로 나누고, 성별 고르게·함께·떨어뜨리기 조건을 지킵니다. 교실 자리표(앞자리 우선, 고정석, 빈 칸)도 만들어 표로 그립니다.',
+    keywords: ['모둠', '조 편성', '조편성', '자리', '좌석', '짝꿍', '짝 바꾸', '팀 나누', '팀 편성', '랜덤', '무작위', '뽑기'],
+    default: false,
+  },
+  {
+    id: 'timer',
+    icon: '⏱',
+    title: '타이머·카운트다운',
+    desc: '수업·발표·시험용 카운트다운과 초시계입니다. 큰 숫자 화면, 시작·멈춤·처음으로, 1·3·5·10분 버튼, 끝날 때 소리·깜빡임이 들어 있습니다. 탭을 오래 비워도 시간이 밀리지 않습니다.',
+    keywords: ['타이머', '카운트다운', '초시계', '스톱워치', '제한 시간', '제한시간', '남은 시간', '발표 시간', '시간 재'],
+    default: false,
+  },
+  {
+    id: 'sheets',
+    icon: '🟩',
+    title: '구글 시트 연동',
+    desc: '공유한 구글 시트를 표로 불러오고, 시트에 붙인 Apps Script 웹 앱으로 결과를 한 줄씩 저장합니다. 인터넷이 끊기면 모아 두었다가 다시 연결될 때 보냅니다.',
+    keywords: ['구글 시트', '구글시트', '스프레드시트', 'google sheet', '공유 시트', '시트에 저장', '시트에서 불러', '설문 결과', '구글 폼'],
+    default: false,
+  },
+  {
+    id: 'qr',
+    icon: '🔳',
+    title: 'QR 코드 만들기',
+    desc: '주소나 글을 QR 코드(SVG·PNG)로 바로 그립니다. 인터넷 없이 앱 안에서 만들고, 한글 주소도 됩니다. 수업 자료 링크, 설문 주소, 자리 안내에 씁니다.',
+    keywords: ['qr', '큐알', 'qr코드', '링크 공유', '접속 주소', '바코드'],
+    default: false,
+  },
 ];
 
 export const SKILL_IDS = SKILLS.map((s) => s.id);
 export const DEFAULT_SKILLS = { enabled: SKILLS.filter((s) => s.default).map((s) => s.id), options: { backupButton: true } };
 
+// 구글 시트 주소는 구글 주소만 받는다 (다른 곳으로 데이터를 보내는 앱이 되지 않게)
+const SHEET_URL_RE = /^https:\/\/docs\.google\.com\/spreadsheets\/[\w\-./?=&#%]*$/;
+const SCRIPT_URL_RE = /^https:\/\/script\.google\.com\/macros\/s\/[\w-]+\/exec$/;
 export function normalizeSkills(raw) {
   const enabled = Array.isArray(raw?.enabled) ? raw.enabled.filter((id) => SKILL_IDS.includes(id)) : DEFAULT_SKILLS.enabled;
   const options = { ...DEFAULT_SKILLS.options, ...(raw?.options && typeof raw.options === 'object' ? raw.options : {}) };
-  return { enabled: [...new Set(enabled)], options: { backupButton: options.backupButton !== false } };
+  const out = { backupButton: options.backupButton !== false };
+  const url = (v, re) => (typeof v === 'string' && re.test(v.trim()) ? v.trim() : '');
+  if (url(options.sheetsUrl, SHEET_URL_RE)) out.sheetsUrl = url(options.sheetsUrl, SHEET_URL_RE);
+  if (url(options.sheetsScript, SCRIPT_URL_RE)) out.sheetsScript = url(options.sheetsScript, SCRIPT_URL_RE);
+  return { enabled: [...new Set(enabled)], options: out };
+}
+export function validSheetsOption(key, value) {
+  if (!value) return true;
+  return (key === 'sheetsUrl' ? SHEET_URL_RE : SCRIPT_URL_RE).test(String(value).trim());
 }
 
 // 요구사항 글에 나온 낱말로 켜면 좋을 스킬을 고른다
@@ -450,9 +504,14 @@ export function skillsRuntime(skills) {
   const on = new Set(s.enabled);
   const parts = [];
   if (on.has('backup')) parts.push(BACKUP_RUNTIME(s.options.backupButton));
-  if (on.has('roster') || on.has('formScan')) parts.push(FILES_RUNTIME);
+  if (on.has('roster') || on.has('formScan') || on.has('grades') || on.has('sheets')) parts.push(FILES_RUNTIME);
   if (on.has('roster')) parts.push(ROSTER_RUNTIME);
   if (on.has('formScan')) parts.push(FORM_RUNTIME);
+  if (on.has('grades')) parts.push(GRADES_RUNTIME);
+  if (on.has('groups')) parts.push(GROUPS_RUNTIME);
+  if (on.has('timer')) parts.push(TIMER_RUNTIME);
+  if (on.has('sheets')) parts.push(SHEETS_RUNTIME(s.options));
+  if (on.has('qr')) parts.push(QR_RUNTIME);
   if (on.has('print')) parts.push(PRINT_RUNTIME);
   return parts.join('\n');
 }
@@ -465,12 +524,17 @@ export function skillsProvides(skills) {
   if (on.has('roster')) { events.push('roster:loaded'); states.push('roster'); }
   if (on.has('formScan')) { events.push('form:analyzed'); states.push('form'); }
   if (on.has('backup')) events.push('store:saved', 'store:error', 'backup:saved', 'backup:restored');
+  if (on.has('grades')) { events.push('grades:computed'); states.push('grades'); }
+  if (on.has('groups')) { events.push('groups:made', 'seats:made'); states.push('groups', 'seats'); }
+  if (on.has('timer')) events.push('timer:start', 'timer:pause', 'timer:tick', 'timer:end', 'timer:reset');
+  if (on.has('sheets')) { events.push('sheets:loaded', 'sheets:saved', 'sheets:error', 'sheets:queued'); states.push('sheet'); }
   if (on.has('print')) events.push('print:start');
   return { events, states };
 }
 
 export function skillsCss(skills) {
-  return normalizeSkills(skills).enabled.includes('print') ? PRINT_CSS : '';
+  const on = new Set(normalizeSkills(skills).enabled);
+  return [on.has('groups') && GROUPS_CSS, on.has('timer') && TIMER_CSS, on.has('sheets') && SHEETS_CSS, on.has('qr') && QR_CSS, on.has('print') && PRINT_CSS].filter(Boolean).join('\n');
 }
 
 // 영역을 만드는 AI 에게 줄 사용법 (켜 둔 스킬만)
@@ -479,6 +543,11 @@ const GUIDE = {
   backup: `- 💾 저장·백업: 데이터를 localStorage 에 직접 쓰지 말고 app.store.get(키, 기본값) / app.store.set(키, 값) 을 쓰세요(자동 저장, JSON 변환 포함). 공유 상태를 저장하려면 앱 시작 때 app.persist('키', 기본값) 한 번 → 이후 app.set('키', 값) 할 때마다 저장되고 새로고침해도 되살아납니다. 화면 오른쪽 아래 💾 버튼이 백업 파일 저장·불러오기를 이미 제공하므로 같은 버튼을 또 만들지 마세요. 필요하면 app.backup.download() / app.backup.restore() 를 호출하세요.`,
   roster: `- 👥 명단 업로드: 파일을 직접 파싱하지 말고 await app.roster.upload() (파일 고르기 창 → 엑셀 xlsx·CSV·TSV 읽기) 또는 app.roster.fromText(붙여넣은 글) 을 쓰세요. 결과는 [{ name, number?, studentId?, grade?, class?, gender?, extra? }] 이고 app.set('roster', 목록) + app.emit('roster:loaded', 목록) 이 자동으로 됩니다. 다른 영역은 app.on('state:roster', fn) 으로 받으세요. 현재 명단: app.roster.get(), 이름만: app.roster.names().`,
   formScan: `- 📋 양식 분석: 사용자가 올린 학교 양식 파일을 const a = await app.form.upload() 로 분석하세요. a.sheets[0] = { title, headerRow, columns: [{ letter, name, type('number'|'date'|'name'|'text'|'empty'), samples }], dataRows, emptyRows }, a.summary = 한 줄 요약. 결과는 app.set('form', a) + app.emit('form:analyzed', a). 앱 데이터를 양식 열 순서대로 내보낼 때는 app.form.download(a, [{ 열이름: 값, ... }], '파일이름.csv'). 표 파일 읽기만 필요하면 await app.files.readTable(file) → { sheets: [{ name, rows: [[...]] }] }.`,
+  grades: `- 📊 성적 합계·순위: 계산을 직접 짜지 말고 const r = app.grades.compute(행들, { items: ['국어','수학'] 또는 [{ key: '중간', weight: 30, max: 100 }, ...], grade: 'nine'(9등급) | 'five'(A~E) | [{ grade: 'A', min: 90 }, ...], by: 'total'|'average'|'weighted', blank: 'skip'|'zero' }) 를 쓰세요. 행들은 [{ name, 국어: 90, ... }] 또는 첫 줄이 머리글인 [[...]] (명단·표 파일에서 읽은 그대로). items 를 빼면 숫자 열을 스스로 찾습니다. r.rows 의 각 줄에 total, average, weighted(반영비율 환산), rank(동점 같은 등수), percentile, grade 가 붙고 석차순으로 정렬됩니다. r.summary[과목] = { count, mean, median, min, max, sd }. 결과는 app.set('grades', r) + app.emit('grades:computed', r) 가 자동. 파일에서 바로: await app.grades.upload(옵션). 내보내기용 표: app.grades.toCsv(r) → app.files.download('성적.csv', app.files.toCsv(표)).`,
+  groups: `- 🎲 모둠·자리 배치: 섞기를 직접 짜지 말고 app.groups.make(명단, { count: 모둠수 } 또는 { size: 모둠당인원 }, + 선택 balance: 'gender', together: [['가','나']], apart: [['가','다']], seed) 를 쓰세요. 명단을 빼면 app.roster 명단을 씁니다(absent: true 인 학생 제외). 결과 { groups: [[학생...]], names: [['이름'...]], conflicts } 는 app.set('groups') + app.emit('groups:made') 가 자동. 자리표: const s = app.groups.seats(명단, { rows, cols, front: ['앞자리 이름'], fixed: { 이름: [행, 열] }, empty: [[행, 열]] }) → s.names (2차원, 빈 칸 null), app.groups.renderSeats('#자리표', s) 로 교탁이 있는 표를 그립니다. 한 명 뽑기: app.groups.pick(명단, 1).`,
+  timer: `- ⏱ 타이머: setInterval 로 직접 세지 말고 app.timer.mount('#칸', { seconds: 300 }) 한 줄이면 큰 숫자·시작/멈춤·처음으로·1/3/5/10분 버튼·끝 소리가 다 그려집니다(초시계는 { mode: 'stopwatch' }). 직접 그릴 때는 const t = app.timer.create({ seconds: 60, id: '발표' }); t.start(), t.pause(), t.reset(초), t.add(초), t.text() → '04:59', t.on((종류, 정보) => …). 다른 영역은 app.on('timer:end', i => …) / 'timer:tick' / 'timer:start' 로 받습니다(i.id, i.remaining, i.text). 시간 글자만: app.timer.format(초).`,
+  sheets: `- 🟩 구글 시트: 시트 주소를 코드에 적지 말고 app.sheets 를 쓰세요. 불러오기: const d = await app.sheets.read() → { rows: [[...]], objects: [{열: 값}] } (app.set('sheet', d) + 'sheets:loaded' 자동). 저장: await app.sheets.append([{ 이름, 점수 }, ...]) (실패하면 오류를 던지고 자동으로 모아 두었다가 다시 보냄, app.sheets.pending() 건수). 시트 주소가 아직 없으면(app.sheets.configured.read/.write 가 false) 교사용 '⚙ 시트 연결' 버튼을 두고 app.sheets.setup() 을 부르세요(주소 입력·Apps Script 코드 복사 창). 오류는 try/catch 로 받아 화면에 알려 주세요(인터넷이 없을 수 있음).`,
+  qr: `- 🔳 QR 코드: 외부 QR 라이브러리·API 를 쓰지 말고 app.qr.render('#칸', 주소, { size: 200, caption: true }) 로 그리세요. SVG 글자: app.qr.svg(글, { size }), 캔버스: app.qr.canvas(글, { size }), PNG 저장 버튼: app.qr.download(글, '파일이름.png'). 오류 정정 { ecc: 'L'|'M'|'Q'|'H' } (기본 M). 인터넷 없이 됩니다.`,
 };
 
 export function skillsPromptSection(skills) {

@@ -968,6 +968,9 @@ body:not(.pro-mode) .workspace[data-mode="preview"] .sidebar { display: none; }
 .skill-text { flex: 1; line-height: 1.5; }
 .skill-text .btn { margin-top: 6px; }
 .dlg-body .skill-opt { display: inline-flex; gap: 6px; align-items: center; margin-top: 4px; font-size: 12px; }
+.dlg-body .skill-opt.skill-opt-col { display: flex; flex-direction: column; align-items: stretch; gap: 4px; margin-top: 8px; }
+.dlg-body .skill-opt-col input[type="url"] { width: 100%; box-sizing: border-box; font: 12px ui-monospace, monospace; padding: 4px 6px; }
+.dlg-body .skill-opt-col .btn { align-self: flex-start; }
 .form-analysis { margin-top: 12px; padding: 10px 12px; border: 1px dashed var(--accent); border-radius: 10px; }
 .mini-table { width: 100%; border-collapse: collapse; margin: 6px 0 10px; font-size: 12px; }
 .mini-table th, .mini-table td { text-align: left; padding: 3px 6px; border-bottom: 1px solid var(--line); }

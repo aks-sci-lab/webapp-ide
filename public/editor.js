@@ -5526,7 +5526,10 @@ async function boot() {
   initSkillsPanel({
     reloadPreview: () => reloadPreview(),
     appendAppPrompt: (text) => {
-      state.layout.appPrompt = `${(state.layout.appPrompt || '').trim()}\n\n${text}`.trim();
+      // 같은 양식을 다시 넣으면 앞에 넣은 것을 새 분석으로 바꾼다 (설명에 같은 표가 여러 번 쌓이지 않게)
+      const head = text.split('\n')[0];
+      const blocks = (state.layout.appPrompt || '').split(/\n{2,}(?=# )/).filter((b) => b.split('\n')[0] !== head);
+      state.layout.appPrompt = `${blocks.join('\n\n').trim()}\n\n${text}`.trim();
       saveLayout(true);
       renderAll();
     },
