@@ -31,6 +31,7 @@ import { SessionStore } from './lib/sessions.js';
 import { ChatMemoryStore } from './lib/chat-memory.js';
 import { QuotaGuard, DEFAULT_FREE_MODE, normalizeFreeMode, isRateOrOverloadError, buildFallbackOrder } from './lib/quota-guard.js';
 import { spawn } from 'node:child_process';
+import { SKILLS, recommendSkills, skillsPromptSection, skillsRuntime, skillsProvides } from './public/skills.js';
 import {
   WorkflowStore, PROPOSE_LAYOUT_SYSTEM, buildProposeLayoutPrompt, parseProposeResponse,
   DISTRIBUTE_PROMPTS_SYSTEM, buildDistributePrompt, parseDistributeResponse, reconcileChecklist,
@@ -762,9 +763,14 @@ app.post('/api/workflow/apply-layout', wrap(async (req, res) => {
   const nextChecklist = (prop.features || [])
     .filter((f) => f && f.enabled !== false && String(f.name || '').trim())
     .map((f) => ({ ...f, region: activeIds.has(f.region) ? f.region : activeRegions[0].id }));
+  // 요구사항에 명단·양식·저장·인쇄 같은 말이 있으면 맞는 스킬을 켜 둔다 (🧩 스킬에서 끌 수 있음)
+  const skillsNow = await project.readSkills();
+  const addSkills = recommendSkills(wf.workload).filter((id) => !skillsNow.enabled.includes(id));
+  if (addSkills.length) await project.writeSkills({ ...skillsNow, enabled: [...skillsNow.enabled, ...addSkills] });
   const updated = await workflowStore().write({ step: 3, proposed: prop, checklist: nextChecklist, deployReady: false });
   await sessionStore().append('integrated', { role: 'system', status: 'ok', summary: `③ 추천 레이아웃을 캔버스에 반영 (${builtScreens.length}개 화면, ${activeRegions.length}개 영역, 기능 ${nextChecklist.length}개)` }).catch(() => {});
-  res.json({ layout: nextLayout, workflow: updated });
+  if (addSkills.length) await sessionStore().append('integrated', { role: 'system', status: 'ok', summary: `🧩 요구사항에 맞는 스킬을 켰습니다: ${addSkills.map((id) => SKILLS.find((k) => k.id === id)?.title || id).join(', ')}` }).catch(() => {});
+  res.json({ layout: nextLayout, workflow: updated, skillsAdded: addSkills });
 }));
 
 // Step 3 → 4: 사용자가 시각적으로 최종 편집한 layout.json 을 읽어 각 영역별 프롬프트 + 최종 기능 목록 분배
@@ -808,6 +814,7 @@ app.post('/api/workflow/verify-features', wrap(async (req, res) => {
     if (auto.length) await project.writeTests(auto);
   }
   const report = await verifyProject(project, { runBrowser: req.body?.runBrowser !== false });
+  await attachFieldErrors(report);
   const layout = await project.getLayout();
   const regionFiles = {};
   for (const { region: r } of flatten(layout)) {
@@ -986,8 +993,54 @@ async function regionPrompt(regionId, request, projectRequest = '', override = n
   const current = String(request || '').split('\n\n# 고쳐야 할 문제')[0].trim();
   if (history.at(-1)?.text === current) history = history.slice(0, -1);
   history = history.slice(-n);
-  return { region, files, prompt: buildPrompt({ layout, region, files, request: request || files.prompt, shared, inherited, projectRequest, measured, decisions, history }) };
+  const skillNote = skillsPromptSection(await project.readSkills());
+  const prompt = buildPrompt({ layout, region, files, request: request || files.prompt, shared, inherited, projectRequest, measured, decisions, history });
+  // 켜 둔 스킬 사용법은 "# 요청" 바로 앞에 넣어 AI 가 직접 다시 만들지 않게 한다
+  const at = prompt.lastIndexOf('\n# 요청\n');
+  return { region, files, prompt: skillNote ? (at >= 0 ? prompt.slice(0, at) + skillNote + prompt.slice(at) : prompt + skillNote) : prompt };
 }
+
+// ── 스킬: 앱에 끼워 넣는 재사용 기능 (명단 업로드 · 양식 분석 · 인쇄 · 저장/백업) ──
+async function skillsState() {
+  const wf = await workflowStore().read().catch(() => ({}));
+  const layout = await project.getLayout();
+  return {
+    catalog: SKILLS.map(({ id, icon, title, desc }) => ({ id, icon, title, desc })),
+    ...(await project.readSkills()),
+    recommended: recommendSkills(`${wf.workload || ''}\n${layout.appPrompt || ''}`),
+  };
+}
+app.get('/api/skills', wrap(async (req, res) => res.json(await skillsState())));
+// 편집기에서 양식 파일을 미리 분석할 때 쓰는 스킬 런타임 코드 (앱에 들어가는 것과 같은 코드)
+app.get('/api/skills/runtime.js', (req, res) => {
+  const ids = String(req.query.ids || '').split(',').filter(Boolean);
+  res.type('application/javascript').send(skillsRuntime({ enabled: ids, options: { backupButton: false } }));
+});
+app.put('/api/skills', wrap(async (req, res) => {
+  const cur = await project.readSkills();
+  const b = req.body || {};
+  await project.writeSkills({ enabled: Array.isArray(b.enabled) ? b.enabled : cur.enabled, options: { ...cur.options, ...(b.options || {}) } });
+  res.json(await skillsState());
+}));
+
+// ── 🐞 실사용 오류: 내보낸 앱에서 모은 오류 기록 가져오기 ──
+async function attachFieldErrors(report) {
+  report.fieldErrors = await project.activeFieldErrors();
+  if (report.fieldErrors.length) report.ok = false;
+  return report;
+}
+app.get('/api/field-errors', wrap(async (req, res) => res.json({ all: await project.readFieldErrors(), active: await project.activeFieldErrors() })));
+app.post('/api/field-errors/import', wrap(async (req, res) => {
+  const result = await project.importFieldErrors(req.body?.data);
+  logger.event('field-errors-import', result);
+  res.json({ ...result, all: await project.readFieldErrors(), active: await project.activeFieldErrors() });
+}));
+app.post('/api/field-errors/clear', wrap(async (req, res) => {
+  const { region, message } = req.body || {};
+  const list = await project.readFieldErrors();
+  await project.writeFieldErrors(message === undefined && region === undefined ? [] : list.filter((e) => !(e.message === message && e.region === (region ?? null))));
+  res.json({ all: await project.readFieldErrors(), active: await project.activeFieldErrors() });
+}));
 
 // ── 프로젝트 전체 프롬프트 ──
 app.get('/api/project', wrap(async (req, res) => {
@@ -1640,6 +1693,7 @@ app.post('/api/regions/:id/generate', async (req, res) => {
       await project.writeRegion(id, Object.fromEntries(changed.map((k) => [k, result.candidate[k]])));
       await project.clearPending(id);
       logger.event('ai-saved', { region: id, files: changed, attempt: result.attempt, fromPlan: Boolean(projectRequest) });
+      await project.markFieldErrorsFixed(id).catch(() => {});
       await sessionStore().append(sessionKey, { role: 'assistant', status: 'ok', summary: `저장 완료 (${changed.join(', ') || '변경 없음'}): ${request.slice(0, 100)}` }).catch(() => {});
       await new ChatMemoryStore(project).append({
         kind: 'handoff',
@@ -1668,7 +1722,7 @@ app.get('/api/analysis/connections', wrap(async (req, res) => {
   const { out } = await leafSources('js');
   const appJs = await project.readShared('js');
   if (appJs.trim()) out['app.js'] = appJs;
-  res.json(scanConnections(out));
+  res.json(scanConnections(out, skillsProvides(await project.readSkills())));
 }));
 
 app.get('/api/analysis/appjs', wrap(async (req, res) => {
@@ -1964,6 +2018,7 @@ ${regions.join('\n\n')}
 
 app.post('/api/verify', wrap(async (req, res) => {
   const report = await verifyProject(project, { runBrowser: req.body?.runBrowser !== false });
+  await attachFieldErrors(report);
   logger.event('verify', { ok: report.ok, syntaxErrors: report.syntaxErrors.length, connectionIssues: report.connectionIssues.length, runtimeErrors: report.browser?.runtimeErrors?.length || 0 });
   const tests = report.browser?.testResults || [];
   const passed = tests.filter((t) => t.ok).length;
@@ -1989,6 +2044,7 @@ app.post('/api/regions/:id/pending/apply', wrap(async (req, res) => {
   await project.writeRegion(id, Object.fromEntries(changed.map((k) => [k, p.files[k]])));
   await project.clearPending(id);
   logger.event('ai-saved', { region: id, files: changed, reviewed: true });
+  await project.markFieldErrorsFixed(id).catch(() => {});
   res.json({ files: await project.readRegion(id) });
 }));
 

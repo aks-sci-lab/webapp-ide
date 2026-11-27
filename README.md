@@ -56,6 +56,38 @@ npm run verify-app # 만든 웹앱을 헤드리스 브라우저로 통합 검증
 | 📊 사용량 | 📜 로그 → 📊 사용량 | 날짜·모델·용도·프로젝트별 호출 수·토큰·시간. 모델 가격을 넣으면 비용 추정 |
 | ♿ 점검 | 상단 | 이미지 대체 텍스트, 입력칸 이름표, 이름 없는 버튼·링크, 중복 id, 제목 단계, 글자 대비, 페이지 무게·로딩 시간·요소 수 |
 
+## 🧩 스킬 (앱에 끼워 넣는 기능 묶음)
+
+상단 **🧩 스킬** 에서 켜고 끕니다. 켜 둔 스킬은 만든 앱(미리보기·내보내기)의 `window.app` 에 들어가고, 영역을 만드는 AI 에게 사용법이 함께 전달되어 같은 기능을 다시 만들지 않습니다.
+② 레이아웃 반영 때 요구사항에 "명단·양식·저장·인쇄·성적·모둠·타이머·구글 시트·QR" 같은 말이 있으면 맞는 스킬이 자동으로 켜집니다. 설정은 `projects/<이름>/skills.json`.
+
+| 스킬 | 기본 | 앱에서 쓰는 법 |
+|---|---|---|
+| 🖨 인쇄 스타일 자동 | 켜짐 | 인쇄할 때 버튼·파일 입력 숨김, 화면 높이 고정 해제, 표·그림 쪽 넘김 보정. `app.print()` / `app.print(['영역ID'])`, `class="no-print"` · `class="print-only"` |
+| 💾 데이터 저장·백업 | 꺼짐 | `app.store.get/set`, `app.persist('키', 기본값)` (공유 상태 자동 저장·복원), 오른쪽 아래 💾 버튼으로 백업 파일(.json) 저장·불러오기, `app.backup.download()/restore()` |
+| 👥 명단 업로드 | 꺼짐 | `await app.roster.upload()` — 엑셀 .xlsx · CSV · TSV(한글 EUC-KR 포함) · 붙여넣기(`app.roster.fromText`)에서 이름·번호·학번·학년·반·성별 열을 찾아 `[{ name, number, ... }]` 로. `state:roster` 로 공유 |
+| 📋 양식 분석하기 | 꺼짐 | `await app.form.upload()` — 양식의 제목·머리글 행·열 이름과 종류·빈 줄 수. `app.form.download(분석, 기록들, '파일.csv')` 로 양식 열 순서대로 내보내기. 🧩 스킬 창의 "양식 파일 미리 분석하기"로 앱 설명에 양식 구조를 넣을 수도 있음 |
+| 📊 성적 합계·순위 | 꺼짐 | `app.grades.compute(행들, { items, grade: 'nine'\|'five', by })` — 합계·평균·반영비율 환산(`{ key, weight, max }`), 동점 같은 등수 석차·백분위·9등급/A~E, 과목별 평균·최고·최저·표준편차. `await app.grades.upload()` 로 표 파일에서 바로 |
+| 🎲 모둠·자리 배치 | 꺼짐 | `app.groups.make(명단, { count \| size, balance: 'gender', together, apart, seed })` 무작위 모둠(인원 차 1명 이내), `app.groups.seats(명단, { rows, cols, front, fixed, empty })` 자리표 + `app.groups.renderSeats('#칸')`. 명단을 빼면 👥 명단을 씀(결석 제외) |
+| ⏱ 타이머·카운트다운 | 꺼짐 | `app.timer.mount('#칸', { seconds: 300 })` 한 줄로 큰 숫자·시작/멈춤·1/3/5/10분 버튼·끝 소리. 직접: `app.timer.create({ seconds, id })` → `start/pause/reset/add/text`, 다른 영역은 `timer:end`·`timer:tick` 으로 받음 |
+| 🟩 구글 시트 연동 | 꺼짐 | `await app.sheets.read()` (링크 공유한 시트를 CSV 로) · `await app.sheets.append([{...}])` (시트에 붙인 Apps Script 웹 앱으로 저장, 실패하면 모았다가 다시 보냄). 시트 주소는 🧩 스킬 창에서 넣거나, 앱 화면에서 `app.sheets.setup()` 창으로. Apps Script 코드는 스킬 창의 "코드 복사" |
+| 🔳 QR 코드 만들기 | 꺼짐 | `app.qr.render('#칸', 주소, { size, caption: true })`, `app.qr.svg/canvas`, `app.qr.download(주소, 'qr.png')`. 외부 라이브러리·인터넷 없이 앱 안에서 만들고 한글도 됨 |
+
+영역 간 이벤트는 앱이 시작되는 동안 먼저 보낸 것도 늦게 듣기 시작한 영역에 전달되고(공유 상태는 지금 값), 모든 영역 스크립트가 끝나면 `app:ready` 가 한 번 옵니다.
+
+## 🐞 버그 잡기: AI 테스트에만 기대지 않기 · 실제 사용 중 오류 모으기
+
+- **🖱 직접 조작 점검**: 검증(✅ 전체 자동 점검, ⑥ 기능 검증)을 할 때마다 AI 가 쓴 테스트와 별개로, 실제 브라우저에서 영역마다 입력칸을 채우고 버튼·체크박스를 눌러 보고 새로고침까지 합니다.
+  - 누르면 오류가 나는 버튼 → 오류 (해당 영역 Auto-Heal 대상)
+  - 입력한 내용은 저장되는데 새로고침하면 화면이 처음으로 돌아가는 영역 → 오류
+  - 눌러도 아무 반응이 없는 버튼, 버튼으로 만든 결과가 새로고침에 사라지는 영역 → 확인 필요(경고)
+  - 대화상자·인쇄·파일 고르기·내려받기·링크 이동은 탐색을 멈추지 않게 가로챕니다 (`lib/explore.js`)
+- **기능 판정**: 체크리스트 기능은 자기 영역의 문제(문법·실행 오류·연결 오류·그 영역을 건드리는 테스트·직접 조작 결과)로만 판정합니다. 연결 분석이 고칠 영역을 정확히 알려 줍니다.
+- **실사용 오류 수집**: 내보낸 앱은 쓰는 동안 난 오류를 그 브라우저의 localStorage 에 조용히 모읍니다(어느 영역의 처리기에서 났는지, 직전 동작 5개 포함, 입력한 값은 적지 않음).
+  - 앱 화면에서 **Ctrl+Shift+E** 또는 💾 백업 메뉴의 **오류 기록 저장** → 오류 기록 파일(.json). 💾 백업 파일에도 함께 들어갑니다.
+  - 편집기 상단 **🐞 오류** → 파일 가져오기 → **🩺 이 오류들 자동 수정** (검증 세션에서 해당 영역 Auto-Heal). AI 가 그 영역을 고치면 "고침"으로 표시되고, 다시 나면 다시 열립니다. 저장 위치: `field-errors.json`
+- 리눅스에서 root 로 실행하면(서버·CI) 크롬에 `--no-sandbox` 를 자동으로 붙이고, 브라우저가 뜨지 않아도 나머지 검사 결과는 그대로 보여 줍니다.
+
 ## 로그 (문제 분석용)
 
 IDE 를 쓰는 동안 일어난 일이 `webapp-ide/logs/<날짜>/` 에 남습니다. 상단 **📜 로그** 에서 날짜·종류별로 볼 수 있습니다.
@@ -157,4 +189,10 @@ projects/<이름>/
 - `lib/ai.js` — 공통 프롬프트, 응답 파싱/정리, Claude 호출
 - `lib/gemini.js` — Gemini REST 호출
 - `lib/local.js` — 로컬 LLM (OpenAI 호환) 호출
+- `lib/explore.js` — 직접 조작 점검 (입력·클릭·새로고침)
+- `public/skills.js` · `public/skills-more.js` — 스킬 목록, 앱에 들어가는 스킬 코드(성적·모둠·타이머·시트·QR 은 skills-more), AI 에게 줄 사용법
 - `public/` — 편집기 UI (빌드 과정 없는 바닐라 JS)
+  - `public/ui-core.js` — 서버 호출·알림·대화상자 공용 도구
+  - `public/history-panels.js` — 🕘 스냅샷, 📜 로그·사용량 창
+  - `public/skills-panel.js` — 🧩 스킬 창, 양식 미리 분석, 구글 시트 주소
+  - `public/field-errors-panel.js` — 🐞 실사용 오류 창

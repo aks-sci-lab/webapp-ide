@@ -24,6 +24,14 @@ export function buildVerifyFixPrompt(report) {
     const failedStep = (t.steps || []).find((s) => !s.ok);
     lines.push(`- [동작 테스트 실패: "${t.name}"] ${failedStep ? `${failedStep.action}(${failedStep.selector}) — ${failedStep.msg}` : '실패'}`);
   }
+  const ex = report.explore && !report.explore.error ? report.explore : null;
+  for (const r of ex?.regions || []) {
+    for (const e of r.errors || []) lines.push(`- [${r.id} 직접 조작 오류] ${e.when}: ${e.message}`);
+    for (const v of r.reloadReverted || []) lines.push(`- [${r.id} 새로고침] ${v.message}`);
+  }
+  for (const e of report.fieldErrors || []) {
+    lines.push(`- [${e.region || '앱'} 실제 사용 오류 ${e.count || 1}회] ${e.message}`);
+  }
   return lines.join('\n');
 }
 
@@ -38,8 +46,12 @@ export function countVerifyIssues(report) {
   const tests = report.browser?.testResults || [];
   const testFail = tests.filter((t) => !t.ok).length;
   const testPass = tests.filter((t) => t.ok).length;
-  const totalErrors = syntax + connErr + localErr + runtime + blankScreens + testFail;
-  return { syntax, connErr, connWarn, localErr, localWarn, runtime, blankScreens, testsTotal: tests.length, testPass, testFail, totalErrors };
+  const ex = report.explore && !report.explore.error ? report.explore : null;
+  const exploreErr = ex ? ex.errorCount : 0;
+  const exploreWarn = ex ? ex.warnCount : 0;
+  const fieldErr = (report.fieldErrors || []).length;
+  const totalErrors = syntax + connErr + localErr + runtime + blankScreens + testFail + exploreErr + fieldErr;
+  return { syntax, connErr, connWarn, localErr, localWarn, runtime, blankScreens, testsTotal: tests.length, testPass, testFail, exploreErr, exploreWarn, exploreRan: Boolean(ex), fieldErr, totalErrors };
 }
 
 export function renderVerifyReport(report, esc, chip) {
@@ -65,8 +77,33 @@ export function renderVerifyReport(report, esc, chip) {
       <div><b class="${c.connErr ? 'err' : c.connWarn ? '' : 'ok'}">${c.connErr}${c.connWarn ? ` (+경고 ${c.connWarn})` : ''}</b><span>영역 연결 오류</span></div>
       <div><b class="${c.runtime ? 'err' : 'ok'}">${c.runtime}</b><span>런타임 JS 오류</span></div>
       <div><b class="${c.testFail ? 'err' : c.testsTotal ? 'ok' : ''}">${c.testPass} / ${c.testsTotal}</b><span>시나리오 테스트</span></div>
+      <div><b class="${c.exploreErr ? 'err' : c.exploreRan ? 'ok' : ''}">${c.exploreRan ? c.exploreErr : '-'}${c.exploreWarn ? ` (+확인 ${c.exploreWarn})` : ''}</b><span>직접 조작 점검</span></div>
+      ${c.fieldErr ? `<div><b class="err">${c.fieldErr}</b><span>실제 사용 오류</span></div>` : ''}
       <div><b class="ok">${mounted.filter((m) => m.width > 0 && m.height > 0).length} / ${mounted.length || report.regions}</b><span>렌더링된 영역</span></div>
     </div>
+
+    ${report.browserError ? `<div class="q-group"><b>⚠ ${esc(report.browserError)}</b><div class="q-item"><span class="muted">문법·연결·로컬 실행 검사 결과는 아래에 그대로 있습니다.</span></div></div>` : ''}
+
+    ${report.explore ? (report.explore.error ? `<div class="q-group"><b>🖱 직접 조작 점검을 끝내지 못했습니다</b><div class="q-item"><span class="muted">${esc(report.explore.error)}</span></div></div>` : `
+      <div class="q-group ${report.explore.errorCount ? 'error' : ''}">
+        <b>🖱 직접 조작 점검 — AI 테스트와 별개로 영역마다 입력·클릭·새로고침 (${report.explore.clicks}번 눌러 봄)</b>
+        ${report.explore.pageErrors.map((e) => `<div class="q-item"><span class="err">❌ ${esc(e.when)}: ${esc(e.message)}</span></div>`).join('')}
+        ${report.explore.regions.map((r) => {
+          const bad = [
+            ...r.errors.map((e) => `<span class="err">❌ ${esc(e.when)}: ${esc(e.message)}</span>`),
+            ...r.reloadReverted.map((v) => `<span class="err">❌ ${esc(v.message)} (${esc(v.when)} 뒤)</span>`),
+            ...(r.deadButtons.length ? [`<span>⚠ 눌러도 반응 없음: ${r.deadButtons.map(esc).join(', ')}</span>`] : []),
+            ...(r.reloadWarnings || []).map(() => '<span>⚠ 버튼으로 바꾼 화면이 새로고침하면 사라집니다 (일부러 저장하지 않는 거라면 괜찮음)</span>'),
+          ];
+          return `<div class="q-item" style="flex-wrap:wrap">${chip(r.id)}<span class="muted">입력 ${r.filled}칸 · 클릭 ${r.clicked}번</span>${bad.join('') || '<span class="ok">✓ 문제 없음</span>'}</div>`;
+        }).join('')}
+      </div>`) : ''}
+
+    ${report.fieldErrors?.length ? `
+      <div class="q-group error">
+        <b>🐞 내보낸 앱을 실제로 쓰다가 난 오류 (${report.fieldErrors.length}종)</b>
+        ${report.fieldErrors.map((e) => `<div class="q-item" style="flex-wrap:wrap">${e.region ? chip(e.region) : ''}<span class="err mono">${esc(e.message)}</span><span class="muted">${e.count || 1}회 · 마지막 ${esc(String(e.last || '').slice(0, 16).replace('T', ' '))}${e.recent?.length ? ` · 직전 동작: ${e.recent.map(esc).join(' → ')}` : ''}</span></div>`).join('')}
+      </div>` : ''}
 
     ${(report.syntaxErrors?.length || report.duplicateIds?.length) ? `
       <div class="q-group error">
@@ -134,6 +171,11 @@ export function buildVerifyFailureBriefing(report, checklist = [], rounds = 5) {
     for (const b of report.browser?.blankScreens || []) {
       reasons.push({ kind: '빈 화면 오류', text: `"${b.title || b.screen}" 화면이 비어 있습니다 — ${b.reason}` });
     }
+    for (const r of (report.explore && !report.explore.error ? report.explore.regions : [])) {
+      for (const e of r.errors || []) reasons.push({ kind: '직접 조작 오류', text: `[${r.id}] ${e.when}: ${e.message}` });
+      for (const v of r.reloadReverted || []) reasons.push({ kind: '새로고침 문제', text: `[${r.id}] ${v.message}` });
+    }
+    for (const e of report.fieldErrors || []) reasons.push({ kind: '실제 사용 오류', text: `${e.region ? `[${e.region}] ` : ''}${e.message} (${e.count || 1}회)` });
     for (const t of (report.browser?.testResults || []).filter((x) => !x.ok)) {
       const fail = (t.steps || []).find((st) => !st.ok);
       reasons.push({ kind: '동작 테스트 실패', text: `"${t.name}" — ${fail ? `${fail.action}(${fail.selector}): ${fail.msg}` : '기대 동작과 다름'}` });

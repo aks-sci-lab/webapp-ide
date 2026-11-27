@@ -61,11 +61,9 @@ export function extractFailingRegions(report, knownRegionIds = [], regionFiles =
   }
   for (const c of report?.connectionIssues || []) {
     if (c.level !== 'error') continue;
-    for (const rid of knownRegionIds) {
-      if (c.text.includes(rid)) {
-        add(rid, `영역 연결 오류: ${c.text}${c.similar?.length ? ` (유사 이름: ${c.similar.join(', ')})` : ''}`);
-      }
-    }
+    // 분석기가 고칠 영역을 알려 주면 그 영역만, 예전 보고서면 이름이 정확히 들어 있는 영역만
+    const targets = Array.isArray(c.regions) ? c.regions : knownRegionIds.filter((rid) => new RegExp(`(^|[\\s,(])${rid}(?=[\\s,)]|$| 이)`).test(c.text));
+    for (const rid of targets) add(rid, `영역 연결 오류: ${c.text}${c.similar?.length ? ` (유사 이름: ${c.similar.join(', ')})` : ''}`);
   }
   for (const l of report?.localCompatibility?.issues || []) {
     if (l.level !== 'error') continue;
@@ -76,6 +74,16 @@ export function extractFailingRegions(report, knownRegionIds = [], regionFiles =
     if (!failed) continue;
     const rid = resolveRegionFromStep(failed, knownRegionIds, regionFiles);
     if (rid) add(rid, `동작 테스트 "${t.name}" 실패: ${failed.action}(${failed.selector || ''}) — ${failed.msg}`);
+  }
+  // 직접 조작(탐색 점검)에서 나온 문제
+  const ex = report?.explore && !report.explore.error ? report.explore : null;
+  for (const r of ex?.regions || []) {
+    for (const e of r.errors || []) add(r.id, `실제로 ${e.when} 했을 때 오류: ${e.message}`);
+    for (const v of r.reloadReverted || []) add(r.id, `${v.message} (${v.when} 뒤). 앱 시작 때 저장된 값을 읽어 화면을 다시 그리세요 (공유 상태는 app.on('state:키') 로 받기)`);
+  }
+  // 내보낸 앱을 실제로 쓰다가 난 오류 (📥 실사용 오류)
+  for (const e of report?.fieldErrors || []) {
+    add(e.region, `실제 사용 중 오류 ${e.count || 1}회: ${e.message}${e.recent?.length ? ` (직전 동작: ${e.recent.join(' → ')})` : ''}`);
   }
   return byRegion;
 }

@@ -3,6 +3,7 @@
 // API 키는 오직 사용자의 브라우저 localStorage 에만 저장되며 외부 서버로 전송되지 않는다.
 import { flatten, find, ancestors, isContainer, sorted, unionRect, splitSizes, uniqueId, DEFAULT_INNER_GRID } from './tree.js';
 import { APP_TEMPLATES, THEME_PRESETS, buildThemeBaseCss } from './templates.js';
+import { SKILLS, normalizeSkills, recommendSkills, skillsRuntime, skillsCss, skillsPromptSection } from './skills.js';
 
 const STORE_KEY = 'webapp-builder-standalone-v1';
 const SETTINGS_KEY = 'webapp-builder-settings-v1';
@@ -172,13 +173,25 @@ function getTodayUsage() {
 // ── HTML 조립기 (브라우저 버전) ──
 const RUNTIME = `window.__ideApp = (() => {
   const handlers = {}; const state = {};
+  // 시작하는 동안 먼저 보낸 이벤트·공유 상태를 늦게 듣기 시작한 영역에도 전달 (서버 버전 lib/build.js 와 같은 동작)
+  let booting = true; const early = [];
+  const call = (fn, d) => { try { fn(d); } catch (err) { console.error(err); } };
   return {
     state, regions: {},
-    on(e, fn) { (handlers[e] ||= []).push(fn); return () => this.off(e, fn); },
+    get ready() { return !booting; },
+    on(e, fn) {
+      (handlers[e] ||= []).push(fn);
+      if (booting) {
+        if (e.startsWith('state:')) { const k = e.slice(6); if (Object.prototype.hasOwnProperty.call(state, k)) call(fn, state[k]); }
+        else early.filter((x) => x.e === e).forEach((x) => call(fn, x.d));
+      }
+      return () => this.off(e, fn);
+    },
     off(e, fn) { handlers[e] = (handlers[e] || []).filter((f) => f !== fn); },
-    emit(e, d) { (handlers[e] || []).forEach((fn) => { try { fn(d); } catch (err) { console.error(err); } }); },
+    emit(e, d) { if (booting && !e.startsWith('state:') && early.length < 200) early.push({ e, d }); [...(handlers[e] || [])].forEach((fn) => call(fn, d)); },
     set(k, v) { state[k] = v; this.emit('state:' + k, v); },
     get(k) { return state[k]; },
+    __markReady() { if (!booting) return; booting = false; early.length = 0; this.emit('app:ready'); },
     multiRoot(ids) {
       const els = () => ids.map((id) => this.regions[id]).filter(Boolean);
       return {
@@ -304,8 +317,10 @@ function buildHtml(proj, { preview = false, candidate = '', testIndex = null } =
     `<script>(function(root,app){try{\n${files[r.id].js}\n}catch(e){(window.__ideRegionError||console.error)(${JSON.stringify(r.id)},e);}})(__ideApp.regions[${JSON.stringify(r.id)}],__ideApp);</script>`,
   ).join('\n');
   const testInject = testIndex !== null && proj.tests[testIndex] ? testRunnerScript(proj.tests[testIndex], testIndex) : '';
+  const skillCss = skillsCss(proj.skills);
+  const skillJs = skillsRuntime(proj.skills);
 
-  return `<!doctype html><html lang="${layout.lang || 'ko'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${layout.name || '내 웹앱'}</title>${proj.shared.head || ''}<style>${baseCss}</style><style>${proj.shared.css || ''}</style><style>${regionCss}</style>${preview ? PREVIEW_HELPER : ''}${testInject}</head><body><div id="app">${render(layout)}</div><script>${RUNTIME}\ndocument.querySelectorAll('#app section[data-region]').forEach(el=>{__ideApp.regions[el.dataset.region]=el;});</script>${proj.shared.js?.trim() ? `<script>${proj.shared.js}</script>` : ''}${scripts}</body></html>`;
+  return `<!doctype html><html lang="${layout.lang || 'ko'}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${layout.name || '내 웹앱'}</title>${proj.shared.head || ''}<style>${baseCss}</style><style>${proj.shared.css || ''}</style><style>${regionCss}</style>${skillCss ? `<style>${skillCss}</style>` : ''}${preview ? PREVIEW_HELPER : ''}${testInject}</head><body><div id="app">${render(layout)}</div><script>${RUNTIME}\ndocument.querySelectorAll('#app section[data-region]').forEach(el=>{__ideApp.regions[el.dataset.region]=el;});</script>${skillJs ? `<script>${skillJs}</script>` : ''}${proj.shared.js?.trim() ? `<script>${proj.shared.js}</script>` : ''}${scripts}<script>__ideApp.__markReady();</script></body></html>`;
 }
 
 // ── 브라우저 직접 AI API 호출 (Gemini / Claude / OpenAI 호환) ──
@@ -610,6 +625,19 @@ export function installBrowserBackend() {
         return jsonResp(proj.layout);
       }
       if (p === '/api/layout/backups') return jsonResp({ list: proj.layoutBackups || [] });
+      // 🧩 스킬
+      if (p === '/api/skills' && (method === 'GET' || method === 'PUT')) {
+        const cur = normalizeSkills(proj.skills);
+        if (method === 'PUT') {
+          proj.skills = normalizeSkills({ enabled: Array.isArray(body.enabled) ? body.enabled : cur.enabled, options: { ...cur.options, ...(body.options || {}) } });
+          saveStore(store);
+        }
+        return jsonResp({ catalog: SKILLS.map(({ id, icon, title, desc }) => ({ id, icon, title, desc })), ...normalizeSkills(proj.skills), recommended: recommendSkills(proj.layout.appPrompt || '') });
+      }
+      if (p === '/api/skills/runtime.js') {
+        const ids = (u.searchParams.get('ids') || '').split(',').filter(Boolean);
+        return new Response(skillsRuntime({ enabled: ids, options: { backupButton: false } }), { headers: { 'Content-Type': 'application/javascript' } });
+      }
       if (p === '/api/project' && method === 'GET') return jsonResp({ appPrompt: proj.layout.appPrompt || '', decisions: proj.decisions || '', ...proj.projectPrompt });
       if (p === '/api/project' && method === 'PUT') {
         if (typeof body.decisions === 'string') proj.decisions = body.decisions;
@@ -702,7 +730,7 @@ export function installBrowserBackend() {
             async start(ctrl) {
               const send = (obj) => ctrl.enqueue(enc.encode(JSON.stringify(obj) + '\n'));
               try {
-                const reqPrompt = `# 앱: ${proj.layout.name}\n${proj.layout.appPrompt ? `설명: ${proj.layout.appPrompt}\n` : ''}# 영역: ${id}\n## 현재 view.html\n\`\`\`html\n${f.html}\n\`\`\`\n## 현재 style.css\n\`\`\`css\n${f.css}\n\`\`\`\n## 현재 script.js\n\`\`\`js\n${f.js}\n\`\`\`\n# 요청\n${body.request}`;
+                const reqPrompt = `# 앱: ${proj.layout.name}\n${proj.layout.appPrompt ? `설명: ${proj.layout.appPrompt}\n` : ''}# 영역: ${id}\n## 현재 view.html\n\`\`\`html\n${f.html}\n\`\`\`\n## 현재 style.css\n\`\`\`css\n${f.css}\n\`\`\`\n## 현재 script.js\n\`\`\`js\n${f.js}\n\`\`\`\n${skillsPromptSection(proj.skills)}# 요청\n${body.request}`;
                 let text = '', usage = null;
                 for await (const ev of runAi(settings, { system: SYSTEM_PROMPT, prompt: reqPrompt, images: body.images || [] })) {
                   if (ev.type === 'delta') send(ev);

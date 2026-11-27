@@ -322,6 +322,25 @@ test('E2E Vibe Coding Simulation: template → OpenAI API → self-healing retry
     assert.match(distHtml, /@scope \(\[data-region="header"\]\)/);
     assert.match(distHtml, /@scope \(\[data-region="main"\]\)/);
     assert.match(distHtml, /--primary: #0d9488;/);
+    // 기본 스킬(인쇄 스타일) + 시작 순서 보정 런타임
+    assert.match(distHtml, /@media print/);
+    assert.match(distHtml, /__ideApp\.__markReady\(\)/);
+
+    // 9. 스킬 켜기 → 빌드 결과와 영역 AI 프롬프트에 반영
+    const sk = await apiJson(baseUrl, 'GET', '/api/skills');
+    assert.deepEqual(sk.enabled, ['print']);
+    assert.ok(sk.catalog.some((k) => k.id === 'roster'));
+    const sk2 = await apiJson(baseUrl, 'PUT', '/api/skills', { enabled: ['print', 'roster', 'backup'], options: { backupButton: false } });
+    assert.deepEqual(sk2.enabled, ['print', 'roster', 'backup']);
+    const prevSkills = await (await fetch(`${baseUrl}/preview`)).text();
+    assert.match(prevSkills, /A\.roster = /);
+    assert.match(prevSkills, /A\.store = /);
+    await fetch(`${baseUrl}/api/regions/main/generate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ request: '명단 업로드 버튼 추가', review: true }),
+    }).then((r) => r.text());
+    assert.match(mockAi.calls.at(-1).promptText, /# 이 앱에 켜진 스킬[\s\S]*app\.roster\.upload[\s\S]*# 요청/);
   } finally {
     child.kill('SIGTERM');
     mockAi.server.close();
