@@ -5,7 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Project } from '../lib/project.js';
 import { verifyProject } from '../lib/app-verify.js';
-import { REGION_CODE, CLEAN_CODE, AI_TESTS, LAYOUT, SKILLS, BUGS } from '../test/fixtures/class-hub-app.js';
+import { REGION_CODE, CLEAN_CODE, CLEAN_GLOBAL_CSS, AI_TESTS, LAYOUT, SKILLS, BUGS } from '../test/fixtures/class-hub-app.js';
 
 export async function makeClassHub({ clean = false } = {}) {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'webapp-ide-hub-'));
@@ -13,6 +13,7 @@ export async function makeClassHub({ clean = false } = {}) {
   await p.init(LAYOUT);
   await p.saveLayout({ ...(await p.getLayout()), ...LAYOUT });
   for (const [id, f] of Object.entries(clean ? CLEAN_CODE : REGION_CODE)) await p.writeRegion(id, f, { backup: false });
+  if (clean) await p.writeShared('css', CLEAN_GLOBAL_CSS);
   await p.writeSkills({ enabled: SKILLS });
   await p.writeTests(AI_TESTS);
   return { p, tmp };

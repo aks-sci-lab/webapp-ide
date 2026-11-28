@@ -280,8 +280,27 @@ export const AI_TESTS = [
 const CLEAN_NAV = {
   html: String.raw`<nav class="tabs"><button data-go="class">수업</button><button data-go="grade">성적</button><button data-go="setup">설정</button></nav>`,
   css: NAV_CSS,
-  js: String.raw`root.querySelectorAll('[data-go]').forEach((b) => b.addEventListener('click', () => app.navigate(b.dataset.go)));`,
+  js: String.raw`const tabs = [...root.querySelectorAll('[data-go]')];
+tabs.forEach((b) => b.addEventListener('click', () => app.navigate(b.dataset.go)));
+const mark = (s) => tabs.forEach((b) => b.classList.toggle('on', b.dataset.go === s));
+app.on('screen:change', mark);
+mark(app.getScreen());`,
 };
+// 고친 판의 공통 모양 (global.css): 영역을 카드로 나누고, 지금 탭을 표시하고, 버튼·입력칸을 키운다
+export const CLEAN_GLOBAL_CSS = String.raw`body { background:#f3f4f8; color:#1f2937; }
+section[data-region] { background:#fff; border:1px solid #e5e7eb; border-radius:12px; box-shadow:0 1px 2px rgba(0,0,0,.05); }
+section[data-region^="nav-"] { background:transparent; border:0; box-shadow:none; }
+h2 { font-size:18px; margin:0 0 12px; }
+button { font:inherit; font-size:14px; padding:6px 14px; border-radius:8px; border:1px solid #c7cbe0; background:#fff; color:inherit; cursor:pointer; }
+button:hover { background:#eef0ff; }
+input, textarea { font:inherit; font-size:14px; padding:6px 8px; border:1px solid #cbd0dc; border-radius:8px; box-sizing:border-box; }
+.tabs button { font-weight:600; }
+.tabs button.on { background:#4f46e5; color:#fff; border-color:#4f46e5; }
+#seatCols, #talkMin { width:72px; }
+#seatGrid { margin-top:12px; }
+#saveHist { margin-top:12px; }
+#rosterChips { margin-top:8px; }
+#syncMsg, #linkMsg { color:#4b5563; }`;
 export const CLEAN_CODE = {
   'nav-class': CLEAN_NAV,
   'nav-grade': CLEAN_NAV,
