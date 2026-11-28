@@ -11,6 +11,8 @@ export function buildVerifyFixPrompt(report) {
   for (const c of report.connectionIssues || []) {
     lines.push(`- [영역 연결 ${c.level === 'error' ? '오류' : '경고'}] ${c.text}${c.similar?.length ? ` (후보: ${c.similar.join(', ')})` : ''}`);
   }
+  for (const i of report.securityIssues || []) lines.push(`- [${i.region} / 보안] ${i.detail} — ${i.fix}`);
+  for (const i of report.storeKeyIssues || []) lines.push(`- [저장 키 겹침 경고] ${i.text}`);
   for (const l of (report.localCompatibility?.issues || []).filter((i) => i.level === 'error')) {
     lines.push(`- [${l.region} / 로컬 실행 불가] ${l.detail} — ${l.fix}`);
   }
@@ -28,6 +30,8 @@ export function buildVerifyFixPrompt(report) {
   for (const r of ex?.regions || []) {
     for (const e of r.errors || []) lines.push(`- [${r.id} 직접 조작 오류] ${e.when}: ${e.message}`);
     for (const v of r.reloadReverted || []) lines.push(`- [${r.id} 새로고침] ${v.message}`);
+    for (const v of r.security || []) lines.push(`- [${r.id} 보안] ${v.message}`);
+    for (const v of r.warnings || []) lines.push(`- [${r.id} 확인 필요] ${v.message}`);
   }
   for (const e of report.fieldErrors || []) {
     lines.push(`- [${e.region || '앱'} 실제 사용 오류 ${e.count || 1}회] ${e.message}`);
@@ -51,8 +55,10 @@ export function countVerifyIssues(report) {
   const exploreErr = ex ? ex.errorCount : 0;
   const exploreWarn = ex ? ex.warnCount : 0;
   const fieldErr = (report.fieldErrors || []).length;
-  const totalErrors = syntax + connErr + localErr + runtime + blankScreens + testFail + exploreErr + fieldErr;
-  return { syntax, connErr, connWarn, localErr, localWarn, runtime, blankScreens, testsTotal: tests.length, testPass, testFail, testSuspect, exploreErr, exploreWarn, exploreRan: Boolean(ex), fieldErr, totalErrors };
+  const security = (report.securityIssues || []).length;
+  const storeWarn = (report.storeKeyIssues || []).length;
+  const totalErrors = syntax + connErr + localErr + runtime + blankScreens + testFail + exploreErr + fieldErr + security;
+  return { syntax, connErr, connWarn, localErr, localWarn, runtime, blankScreens, testsTotal: tests.length, testPass, testFail, testSuspect, exploreErr, exploreWarn, exploreRan: Boolean(ex), fieldErr, security, storeWarn, totalErrors };
 }
 
 export function renderVerifyReport(report, esc, chip) {
@@ -80,6 +86,7 @@ export function renderVerifyReport(report, esc, chip) {
       <div><b class="${c.testFail ? 'err' : c.testsTotal ? 'ok' : ''}">${c.testPass} / ${c.testsTotal}${c.testSuspect ? ` (+테스트 확인 ${c.testSuspect})` : ''}</b><span>시나리오 테스트</span></div>
       <div><b class="${c.exploreErr ? 'err' : c.exploreRan ? 'ok' : ''}">${c.exploreRan ? c.exploreErr : '-'}${c.exploreWarn ? ` (+확인 ${c.exploreWarn})` : ''}</b><span>직접 조작 점검</span></div>
       ${c.fieldErr ? `<div><b class="err">${c.fieldErr}</b><span>실제 사용 오류</span></div>` : ''}
+      ${c.security ? `<div><b class="err">${c.security}</b><span>보안</span></div>` : ''}
       <div><b class="ok">${mounted.filter((m) => m.width > 0 && m.height > 0).length} / ${mounted.length || report.regions}</b><span>렌더링된 영역</span></div>
     </div>
 
@@ -93,6 +100,8 @@ export function renderVerifyReport(report, esc, chip) {
           const bad = [
             ...r.errors.map((e) => `<span class="err">❌ ${esc(e.when)}: ${esc(e.message)}</span>`),
             ...r.reloadReverted.map((v) => `<span class="err">❌ ${esc(v.message)} (${esc(v.when)} 뒤)</span>`),
+            ...(r.security || []).map((v) => `<span class="err">🔒 보안: ${esc(v.message)}</span>`),
+            ...(r.warnings || []).map((v) => `<span>⚠ ${esc(v.message)}</span>`),
             ...(r.deadButtons.length ? [`<span>⚠ 눌러도 반응 없음: ${r.deadButtons.map(esc).join(', ')}</span>`] : []),
             ...(r.reloadWarnings || []).map(() => '<span>⚠ 버튼으로 바꾼 화면이 새로고침하면 사라집니다 (일부러 저장하지 않는 거라면 괜찮음)</span>'),
           ];
@@ -111,6 +120,13 @@ export function renderVerifyReport(report, esc, chip) {
         <b>❌ 문법 및 중복 ID (${c.syntax}건)</b>
         ${(report.syntaxErrors || []).map((s) => `<div class="q-item">${chip(s.region)}<span class="mono">${esc(s.file)}</span><span class="err">${esc(s.error)}</span></div>`).join('')}
         ${(report.duplicateIds || []).map((d) => `<div class="q-item"><span class="mono">#${esc(d.id)}</span><span class="err">중복 영역: ${d.regions.map(esc).join(', ')}</span></div>`).join('')}
+      </div>` : ''}
+
+    ${(report.securityIssues?.length || report.storeKeyIssues?.length) ? `
+      <div class="q-group ${report.securityIssues?.length ? 'error' : ''}">
+        <b>🔒 보안 · 저장 키 (${(report.securityIssues || []).length + (report.storeKeyIssues || []).length}건)</b>
+        ${(report.securityIssues || []).map((i) => `<div class="q-item" style="flex-wrap:wrap">${chip(i.region)}<span class="err">❌ ${esc(i.detail)}</span><span class="muted">${esc(i.fix)}</span></div>`).join('')}
+        ${(report.storeKeyIssues || []).map((i) => `<div class="q-item" style="flex-wrap:wrap">${i.regions.map(chip).join('')}<span>⚠ ${esc(i.text)}</span></div>`).join('')}
       </div>` : ''}
 
     ${report.connectionIssues?.length ? `
@@ -164,6 +180,7 @@ export function buildVerifyFailureBriefing(report, checklist = [], rounds = 5) {
     for (const c of (report.connectionIssues || []).filter((i) => i.level === 'error')) {
       reasons.push({ kind: '영역 연결 불일치', text: c.text });
     }
+    for (const i of report.securityIssues || []) reasons.push({ kind: '보안', text: `[${i.region}] ${i.detail}` });
     for (const l of (report.localCompatibility?.issues || []).filter((i) => i.level === 'error')) {
       reasons.push({ kind: '로컬 실행 불가', text: `[${l.region}] ${l.detail} — ${l.fix}` });
     }
@@ -176,6 +193,7 @@ export function buildVerifyFailureBriefing(report, checklist = [], rounds = 5) {
     for (const r of (report.explore && !report.explore.error ? report.explore.regions : [])) {
       for (const e of r.errors || []) reasons.push({ kind: '직접 조작 오류', text: `[${r.id}] ${e.when}: ${e.message}` });
       for (const v of r.reloadReverted || []) reasons.push({ kind: '새로고침 문제', text: `[${r.id}] ${v.message}` });
+      for (const v of r.security || []) reasons.push({ kind: '보안', text: `[${r.id}] ${v.message}` });
     }
     for (const e of report.fieldErrors || []) reasons.push({ kind: '실제 사용 오류', text: `${e.region ? `[${e.region}] ` : ''}${e.message} (${e.count || 1}회)` });
     for (const t of (report.browser?.testResults || []).filter((x) => !x.ok && !x.suspect)) {
