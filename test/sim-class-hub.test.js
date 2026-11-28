@@ -10,6 +10,10 @@ import { findBrowser } from '../lib/shot.js';
 import { countVerifyIssues, buildVerifyFixPrompt } from '../public/app-verifier.js';
 import { extractFailingRegions } from '../public/session-panel.js';
 import { makeClassHub, score } from '../scripts/sim-class-hub.js';
+import { checkViewports } from '../lib/viewport-check.js';
+import { Project } from '../lib/project.js';
+import os from 'node:os';
+import path from 'node:path';
 
 test('secret scan: API keys and tokens written in app code are security errors (masked in the report)', () => {
   const issues = scanSecrets({
@@ -59,7 +63,7 @@ test('class hub simulation: catches the hard planted bugs (security, cross-tab s
   if (!(await findBrowser())) return t.skip('Edge/Chrome 이 없어 실제 브라우저 검사를 건너뜀');
   const { p, tmp } = await makeClassHub();
   try {
-    const r = await verifyProject(p);
+    const r = await verifyProject(p, { viewportShots: false });
     assert.equal(r.browserError, '');
     assert.ok(!r.explore.error, r.explore.error);
     assert.equal(r.ok, false);
@@ -82,7 +86,7 @@ test('class hub simulation: the fixed version of the same app passes with no fal
   if (!(await findBrowser())) return t.skip('Edge/Chrome 이 없어 실제 브라우저 검사를 건너뜀');
   const { p, tmp } = await makeClassHub({ clean: true });
   try {
-    const r = await verifyProject(p);
+    const r = await verifyProject(p, { viewportShots: false });
     assert.equal(r.browserError, '');
     assert.ok(!r.explore.error, r.explore.error);
     assert.deepEqual(r.securityIssues, []);
@@ -94,6 +98,59 @@ test('class hub simulation: the fixed version of the same app passes with no fal
       assert.deepEqual(x.deadButtons, [], x.id);
     }
     assert.equal(r.ok, true);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test('viewport check: laptop/desktop/tablet sizes on every tab find layout problems in the buggy app', { timeout: 120000 }, async (t) => {
+  const browser = await findBrowser();
+  if (!browser) return t.skip('Edge/Chrome 이 없어 실제 브라우저 검사를 건너뜀');
+  const { p, tmp } = await makeClassHub();
+  try {
+    const r = await checkViewports(p, browser);
+    assert.ok(!r.error, r.error);
+    assert.deepEqual(r.sizes.map((v) => v.id), ['laptop', 'desktop', 'tablet-portrait', 'tablet-landscape']);
+    const kinds = (k) => r.issues.filter((i) => i.kind === k);
+    assert.ok(kinds('canvas').some((i) => i.region === 'stats' && i.level === 'error'), '숨은 탭 그래프');
+    assert.equal(kinds('active-tab').length, 3, '탭 3개 모두 지금 탭 표시 없음');
+    assert.equal(kinds('boundary').length, 3, '탭마다 영역 경계 없음');
+    assert.ok(kinds('small-control').every((i) => /태블릿/.test(i.size)), '작은 버튼은 터치 화면에서만');
+    assert.ok(kinds('small-control').length > 0);
+    assert.ok(kinds('empty').every((i) => /데스크톱/.test(i.size)) && kinds('empty').length === 3, '큰 화면 빈 칸은 탭마다 한 줄');
+    assert.equal(r.ok, false);
+  } finally {
+    await fs.rm(tmp, { recursive: true, force: true });
+  }
+});
+
+test('viewport check: horizontal scroll and clipped content are errors; fixed app is clean and gets screenshots', { timeout: 180000 }, async (t) => {
+  const browser = await findBrowser();
+  if (!browser) return t.skip('Edge/Chrome 이 없어 실제 브라우저 검사를 건너뜀');
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'webapp-ide-vp-'));
+  try {
+    const p = new Project(dir);
+    const layout = { name: '넘침 시험', mode: 'grid', grid: { cols: 12, rows: 12, gap: 8, fill: true }, regions: [
+      { id: 'wide', title: '넓은 표', x: 0, y: 0, w: 6, h: 12 },
+      { id: 'tall', title: '긴 목록', x: 6, y: 0, w: 6, h: 12 },
+    ] };
+    await p.init(layout);
+    await p.saveLayout({ ...(await p.getLayout()), ...layout });
+    await p.writeRegion('wide', { html: '<h2>넓은 표</h2><div style="width:1500px">아주 넓은 내용</div>', css: ':scope { padding:12px; border:1px solid #ccc; overflow:visible !important; }' }, { backup: false });
+    await p.writeRegion('tall', { html: '<h2>긴 목록</h2>' + '<p>줄</p>'.repeat(80), css: ':scope { padding:12px; border:1px solid #ccc; overflow:hidden !important; }' }, { backup: false });
+    const r = await checkViewports(p, browser);
+    assert.ok(r.issues.some((i) => i.kind === 'hscroll' && i.level === 'error'), JSON.stringify(r.issues));
+    assert.ok(r.issues.some((i) => i.kind === 'clip-y' && i.region === 'tall' && i.level === 'error'));
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+  const { p, tmp } = await makeClassHub({ clean: true });
+  try {
+    const shotsDir = path.join(tmp, 'verify-shots');
+    const r = await checkViewports(p, browser, { shotsDir });
+    assert.deepEqual(r.issues, []);
+    assert.equal(r.shots.length, 12, '크기 4 × 탭 3');
+    for (const s of r.shots) assert.ok((await fs.stat(path.join(shotsDir, s.file))).size > 1000, s.file);
   } finally {
     await fs.rm(tmp, { recursive: true, force: true });
   }

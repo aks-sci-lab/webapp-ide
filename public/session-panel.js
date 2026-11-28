@@ -83,6 +83,7 @@ export function extractFailingRegions(report, knownRegionIds = [], regionFiles =
     for (const v of r.security || []) add(r.id, `보안 문제: ${v.message}`);
   }
   for (const i of report?.securityIssues || []) add(i.region, `보안 문제: ${i.detail}. ${i.fix}`);
+  for (const v of (report?.viewport && !report.viewport.error ? report.viewport.issues : []).filter((x) => x.level === 'error')) add(v.region, `화면 크기 ${v.size}${v.screen ? ` · ${v.screen} 탭` : ''}: ${v.message}`);
   // 내보낸 앱을 실제로 쓰다가 난 오류 (📥 실사용 오류)
   for (const e of report?.fieldErrors || []) {
     add(e.region, `실제 사용 중 오류 ${e.count || 1}회: ${e.message}${e.recent?.length ? ` (직전 동작: ${e.recent.join(' → ')})` : ''}`);

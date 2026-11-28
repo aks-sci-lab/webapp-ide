@@ -5,13 +5,14 @@ import os from 'node:os';
 import path from 'node:path';
 import { Project } from '../lib/project.js';
 import { verifyProject } from '../lib/app-verify.js';
-import { REGION_CODE, CLEAN_CODE, CLEAN_GLOBAL_CSS, AI_TESTS, LAYOUT, SKILLS, BUGS } from '../test/fixtures/class-hub-app.js';
+import { REGION_CODE, CLEAN_CODE, CLEAN_GLOBAL_CSS, CLEAN_LAYOUT, AI_TESTS, LAYOUT, SKILLS, BUGS } from '../test/fixtures/class-hub-app.js';
 
 export async function makeClassHub({ clean = false } = {}) {
   const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'webapp-ide-hub-'));
   const p = new Project(tmp);
-  await p.init(LAYOUT);
-  await p.saveLayout({ ...(await p.getLayout()), ...LAYOUT });
+  const layout = clean ? CLEAN_LAYOUT : LAYOUT;
+  await p.init(layout);
+  await p.saveLayout({ ...(await p.getLayout()), ...layout });
   for (const [id, f] of Object.entries(clean ? CLEAN_CODE : REGION_CODE)) await p.writeRegion(id, f, { backup: false });
   if (clean) await p.writeShared('css', CLEAN_GLOBAL_CSS);
   await p.writeSkills({ enabled: SKILLS });
@@ -42,6 +43,8 @@ export function findings(r) {
     if (x.deadButtons.length) out.push(['탐색⚠', x.id, `반응 없음: ${x.deadButtons.join(', ')}`]);
   }
   for (const e of r.explore?.pageErrors || []) out.push(['탐색❌', '(앱)', `${e.when}: ${e.message}`]);
+  for (const v of r.viewport?.issues || []) out.push([v.level === 'error' ? '화면❌' : '화면⚠', v.region || '-', `${v.size || '모든 크기'}${v.screen ? ' · ' + v.screen + ' 탭' : ''}: ${v.message}`]);
+  if (r.viewport?.error) out.push(['화면', '-', r.viewport.error]);
   if (r.explore?.error) out.push(['탐색', '-', r.explore.error]);
   return out;
 }

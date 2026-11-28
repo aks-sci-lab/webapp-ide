@@ -248,6 +248,30 @@ export const LAYOUT = {
   ],
 };
 
+// 고친 판의 배치: 페이지형(내용 높이에 맞춤)이라 큰 화면에서 칸 안이 비지 않는다
+export const CLEAN_LAYOUT = {
+  ...LAYOUT,
+  screens: [
+    { id: 'class', title: '수업', grid: { cols: 12, rows: 10, gap: 8, fill: false, rowHeight: 40 }, regions: [
+      { id: 'nav-class', title: '탭(수업)', x: 0, y: 0, w: 12, h: 1 },
+      { id: 'seat', title: '자리 배치', x: 0, y: 1, w: 7, h: 8 },
+      { id: 'lesson-timer', title: '발표 타이머', x: 7, y: 1, w: 5, h: 4 },
+      { id: 'qr-share', title: '링크 QR', x: 7, y: 5, w: 5, h: 4 },
+    ] },
+    { id: 'grade', title: '성적', grid: { cols: 12, rows: 10, gap: 8, fill: false, rowHeight: 40 }, regions: [
+      { id: 'nav-grade', title: '탭(성적)', x: 0, y: 0, w: 12, h: 1 },
+      { id: 'score-board', title: '점수 입력', x: 0, y: 1, w: 7, h: 6 },
+      { id: 'stats', title: '통계', x: 7, y: 1, w: 5, h: 6 },
+    ] },
+    { id: 'setup', title: '설정', grid: { cols: 12, rows: 10, gap: 8, fill: false, rowHeight: 40 }, regions: [
+      { id: 'nav-setup', title: '탭(설정)', x: 0, y: 0, w: 12, h: 1 },
+      { id: 'roster-setup', title: '명단', x: 0, y: 1, w: 4, h: 6 },
+      { id: 'sync', title: '시트 동기화', x: 4, y: 1, w: 4, h: 3 },
+      { id: 'memo', title: '메모', x: 8, y: 1, w: 4, h: 6 },
+    ] },
+  ],
+};
+
 export const SKILLS = ['print', 'backup', 'roster', 'groups', 'sheets', 'qr'];
 
 // AI 가 만든 시나리오 테스트 (좋은 것·틀린 것 섞임)
@@ -291,9 +315,9 @@ export const CLEAN_GLOBAL_CSS = String.raw`body { background:#f3f4f8; color:#1f2
 section[data-region] { background:#fff; border:1px solid #e5e7eb; border-radius:12px; box-shadow:0 1px 2px rgba(0,0,0,.05); }
 section[data-region^="nav-"] { background:transparent; border:0; box-shadow:none; }
 h2 { font-size:18px; margin:0 0 12px; }
-button { font:inherit; font-size:14px; padding:6px 14px; border-radius:8px; border:1px solid #c7cbe0; background:#fff; color:inherit; cursor:pointer; }
+button { font:inherit; font-size:14px; padding:6px 14px; min-height:32px; border-radius:8px; border:1px solid #c7cbe0; background:#fff; color:inherit; cursor:pointer; }
 button:hover { background:#eef0ff; }
-input, textarea { font:inherit; font-size:14px; padding:6px 8px; border:1px solid #cbd0dc; border-radius:8px; box-sizing:border-box; }
+input, textarea { font:inherit; font-size:14px; padding:6px 8px; min-height:32px; border:1px solid #cbd0dc; border-radius:8px; box-sizing:border-box; }
 .tabs button { font-weight:600; }
 .tabs button.on { background:#4f46e5; color:#fff; border-color:#4f46e5; }
 #seatCols, #talkMin { width:72px; }

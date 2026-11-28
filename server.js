@@ -2032,6 +2032,13 @@ app.post('/api/verify', wrap(async (req, res) => {
   res.json(report);
 }));
 
+// 화면 크기별 점검에서 찍은 그림 (프로젝트 폴더 verify-shots/)
+app.get('/api/verify-shot', wrap(async (req, res) => {
+  const file = String(req.query.file || '');
+  if (!/^[a-z0-9-]+(?:_[a-z0-9-]+)?\.png$/.test(file)) return res.status(400).end();
+  res.sendFile(path.join(project.root, 'verify-shots', file), (err) => { if (err && !res.headersSent) res.status(404).end(); });
+}));
+
 // ── 검토 대기 중인 AI 결과: 보기 / 적용 / 버리기 ──
 app.get('/api/regions/:id/pending', wrap(async (req, res) => res.json({ pending: await project.readPending(req.params.id) })));
 
