@@ -69,7 +69,7 @@ export function extractFailingRegions(report, knownRegionIds = [], regionFiles =
     if (l.level !== 'error') continue;
     add(l.region, `로컬 단독 실행 불가(${l.detail}): ${l.fix}`);
   }
-  for (const t of (report?.browser?.testResults || []).filter((x) => !x.ok)) {
+  for (const t of (report?.browser?.testResults || []).filter((x) => !x.ok && !x.suspect)) {
     const failed = (t.steps || []).find((s) => !s.ok);
     if (!failed) continue;
     const rid = resolveRegionFromStep(failed, knownRegionIds, regionFiles);

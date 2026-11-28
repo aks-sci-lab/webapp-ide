@@ -20,7 +20,7 @@ export function buildVerifyFixPrompt(report) {
   for (const b of report.browser?.blankScreens || []) {
     lines.push(`- [빈 화면 렌더링 오류: ${b.title || b.screen}] ${b.reason} (영역: ${(b.regions || []).join(', ')})`);
   }
-  for (const t of (report.browser?.testResults || []).filter((x) => !x.ok)) {
+  for (const t of (report.browser?.testResults || []).filter((x) => !x.ok && !x.suspect)) {
     const failedStep = (t.steps || []).find((s) => !s.ok);
     lines.push(`- [동작 테스트 실패: "${t.name}"] ${failedStep ? `${failedStep.action}(${failedStep.selector}) — ${failedStep.msg}` : '실패'}`);
   }
@@ -44,14 +44,15 @@ export function countVerifyIssues(report) {
   const runtime = (report.browser?.runtimeErrors || []).length;
   const blankScreens = (report.browser?.blankScreens || []).length;
   const tests = report.browser?.testResults || [];
-  const testFail = tests.filter((t) => !t.ok).length;
+  const testFail = tests.filter((t) => !t.ok && !t.suspect).length;
+  const testSuspect = tests.filter((t) => !t.ok && t.suspect).length;
   const testPass = tests.filter((t) => t.ok).length;
   const ex = report.explore && !report.explore.error ? report.explore : null;
   const exploreErr = ex ? ex.errorCount : 0;
   const exploreWarn = ex ? ex.warnCount : 0;
   const fieldErr = (report.fieldErrors || []).length;
   const totalErrors = syntax + connErr + localErr + runtime + blankScreens + testFail + exploreErr + fieldErr;
-  return { syntax, connErr, connWarn, localErr, localWarn, runtime, blankScreens, testsTotal: tests.length, testPass, testFail, exploreErr, exploreWarn, exploreRan: Boolean(ex), fieldErr, totalErrors };
+  return { syntax, connErr, connWarn, localErr, localWarn, runtime, blankScreens, testsTotal: tests.length, testPass, testFail, testSuspect, exploreErr, exploreWarn, exploreRan: Boolean(ex), fieldErr, totalErrors };
 }
 
 export function renderVerifyReport(report, esc, chip) {
@@ -76,7 +77,7 @@ export function renderVerifyReport(report, esc, chip) {
       <div><b class="${c.syntax ? 'err' : 'ok'}">${c.syntax}</b><span>문법 · 중복 ID</span></div>
       <div><b class="${c.connErr ? 'err' : c.connWarn ? '' : 'ok'}">${c.connErr}${c.connWarn ? ` (+경고 ${c.connWarn})` : ''}</b><span>영역 연결 오류</span></div>
       <div><b class="${c.runtime ? 'err' : 'ok'}">${c.runtime}</b><span>런타임 JS 오류</span></div>
-      <div><b class="${c.testFail ? 'err' : c.testsTotal ? 'ok' : ''}">${c.testPass} / ${c.testsTotal}</b><span>시나리오 테스트</span></div>
+      <div><b class="${c.testFail ? 'err' : c.testsTotal ? 'ok' : ''}">${c.testPass} / ${c.testsTotal}${c.testSuspect ? ` (+테스트 확인 ${c.testSuspect})` : ''}</b><span>시나리오 테스트</span></div>
       <div><b class="${c.exploreErr ? 'err' : c.exploreRan ? 'ok' : ''}">${c.exploreRan ? c.exploreErr : '-'}${c.exploreWarn ? ` (+확인 ${c.exploreWarn})` : ''}</b><span>직접 조작 점검</span></div>
       ${c.fieldErr ? `<div><b class="err">${c.fieldErr}</b><span>실제 사용 오류</span></div>` : ''}
       <div><b class="ok">${mounted.filter((m) => m.width > 0 && m.height > 0).length} / ${mounted.length || report.regions}</b><span>렌더링된 영역</span></div>
@@ -134,8 +135,9 @@ export function renderVerifyReport(report, esc, chip) {
       <b>🧪 시나리오 동작 테스트 (${c.testPass}/${c.testsTotal} 통과)</b>
       ${(report.browser?.testResults || []).map((t) => `
         <div class="q-item" style="flex-wrap:wrap">
-          <b class="${t.ok ? 'ok' : 'err'}">${t.ok ? '✓' : '✗'} ${esc(t.name)}</b>
+          <b class="${t.ok ? 'ok' : t.suspect ? '' : 'err'}">${t.ok ? '✓' : t.suspect ? '⚠' : '✗'} ${esc(t.name)}</b>
           <span class="muted">${(t.steps || []).map((s) => `${s.ok ? '✓' : '✗'} ${esc(s.msg)}`).join(' · ')}</span>
+          ${t.suspect ? `<span>⚠ ${esc(t.suspect)}</span>` : ''}
         </div>`).join('') || '<p class="muted small-note" style="margin:4px 0">등록된 동작 테스트가 없습니다. 상단 "⚡ 기본 테스트 자동 생성" 또는 "🤖 AI 테스트 생성"을 눌러 추가하세요.</p>'}
     </div>
 
@@ -176,7 +178,7 @@ export function buildVerifyFailureBriefing(report, checklist = [], rounds = 5) {
       for (const v of r.reloadReverted || []) reasons.push({ kind: '새로고침 문제', text: `[${r.id}] ${v.message}` });
     }
     for (const e of report.fieldErrors || []) reasons.push({ kind: '실제 사용 오류', text: `${e.region ? `[${e.region}] ` : ''}${e.message} (${e.count || 1}회)` });
-    for (const t of (report.browser?.testResults || []).filter((x) => !x.ok)) {
+    for (const t of (report.browser?.testResults || []).filter((x) => !x.ok && !x.suspect)) {
       const fail = (t.steps || []).find((st) => !st.ok);
       reasons.push({ kind: '동작 테스트 실패', text: `"${t.name}" — ${fail ? `${fail.action}(${fail.selector}): ${fail.msg}` : '기대 동작과 다름'}` });
     }
