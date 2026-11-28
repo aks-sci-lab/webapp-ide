@@ -11,6 +11,8 @@ export function buildVerifyFixPrompt(report) {
   for (const c of report.connectionIssues || []) {
     lines.push(`- [영역 연결 ${c.level === 'error' ? '오류' : '경고'}] ${c.text}${c.similar?.length ? ` (후보: ${c.similar.join(', ')})` : ''}`);
   }
+  for (const i of report.securityIssues || []) lines.push(`- [${i.region} / 보안] ${i.detail} — ${i.fix}`);
+  for (const i of report.storeKeyIssues || []) lines.push(`- [저장 키 겹침 경고] ${i.text}`);
   for (const l of (report.localCompatibility?.issues || []).filter((i) => i.level === 'error')) {
     lines.push(`- [${l.region} / 로컬 실행 불가] ${l.detail} — ${l.fix}`);
   }
@@ -28,6 +30,11 @@ export function buildVerifyFixPrompt(report) {
   for (const r of ex?.regions || []) {
     for (const e of r.errors || []) lines.push(`- [${r.id} 직접 조작 오류] ${e.when}: ${e.message}`);
     for (const v of r.reloadReverted || []) lines.push(`- [${r.id} 새로고침] ${v.message}`);
+    for (const v of r.security || []) lines.push(`- [${r.id} 보안] ${v.message}`);
+    for (const v of r.warnings || []) lines.push(`- [${r.id} 확인 필요] ${v.message}`);
+  }
+  for (const v of (report.viewport && !report.viewport.error ? report.viewport.issues : [])) {
+    lines.push(`- [${v.region || '앱'} 화면 크기${v.size ? ' ' + v.size : ''}${v.screen ? ' · ' + v.screen + ' 탭' : ''} ${v.level === 'error' ? '오류' : '확인 필요'}] ${v.message}`);
   }
   for (const e of report.fieldErrors || []) {
     lines.push(`- [${e.region || '앱'} 실제 사용 오류 ${e.count || 1}회] ${e.message}`);
@@ -51,8 +58,13 @@ export function countVerifyIssues(report) {
   const exploreErr = ex ? ex.errorCount : 0;
   const exploreWarn = ex ? ex.warnCount : 0;
   const fieldErr = (report.fieldErrors || []).length;
-  const totalErrors = syntax + connErr + localErr + runtime + blankScreens + testFail + exploreErr + fieldErr;
-  return { syntax, connErr, connWarn, localErr, localWarn, runtime, blankScreens, testsTotal: tests.length, testPass, testFail, testSuspect, exploreErr, exploreWarn, exploreRan: Boolean(ex), fieldErr, totalErrors };
+  const security = (report.securityIssues || []).length;
+  const vp = report.viewport && !report.viewport.error ? report.viewport : null;
+  const viewportErr = vp ? vp.errorCount : 0;
+  const viewportWarn = vp ? vp.warnCount : 0;
+  const storeWarn = (report.storeKeyIssues || []).length;
+  const totalErrors = syntax + connErr + localErr + runtime + blankScreens + testFail + exploreErr + fieldErr + security + viewportErr;
+  return { viewportErr, viewportWarn, viewportRan: Boolean(vp), syntax, connErr, connWarn, localErr, localWarn, runtime, blankScreens, testsTotal: tests.length, testPass, testFail, testSuspect, exploreErr, exploreWarn, exploreRan: Boolean(ex), fieldErr, security, storeWarn, totalErrors };
 }
 
 export function renderVerifyReport(report, esc, chip) {
@@ -80,6 +92,8 @@ export function renderVerifyReport(report, esc, chip) {
       <div><b class="${c.testFail ? 'err' : c.testsTotal ? 'ok' : ''}">${c.testPass} / ${c.testsTotal}${c.testSuspect ? ` (+테스트 확인 ${c.testSuspect})` : ''}</b><span>시나리오 테스트</span></div>
       <div><b class="${c.exploreErr ? 'err' : c.exploreRan ? 'ok' : ''}">${c.exploreRan ? c.exploreErr : '-'}${c.exploreWarn ? ` (+확인 ${c.exploreWarn})` : ''}</b><span>직접 조작 점검</span></div>
       ${c.fieldErr ? `<div><b class="err">${c.fieldErr}</b><span>실제 사용 오류</span></div>` : ''}
+      ${c.security ? `<div><b class="err">${c.security}</b><span>보안</span></div>` : ''}
+      ${c.viewportRan ? `<div><b class="${c.viewportErr ? 'err' : 'ok'}">${c.viewportErr}${c.viewportWarn ? ` (+확인 ${c.viewportWarn})` : ''}</b><span>화면 크기별</span></div>` : ''}
       <div><b class="ok">${mounted.filter((m) => m.width > 0 && m.height > 0).length} / ${mounted.length || report.regions}</b><span>렌더링된 영역</span></div>
     </div>
 
@@ -93,11 +107,20 @@ export function renderVerifyReport(report, esc, chip) {
           const bad = [
             ...r.errors.map((e) => `<span class="err">❌ ${esc(e.when)}: ${esc(e.message)}</span>`),
             ...r.reloadReverted.map((v) => `<span class="err">❌ ${esc(v.message)} (${esc(v.when)} 뒤)</span>`),
+            ...(r.security || []).map((v) => `<span class="err">🔒 보안: ${esc(v.message)}</span>`),
+            ...(r.warnings || []).map((v) => `<span>⚠ ${esc(v.message)}</span>`),
             ...(r.deadButtons.length ? [`<span>⚠ 눌러도 반응 없음: ${r.deadButtons.map(esc).join(', ')}</span>`] : []),
             ...(r.reloadWarnings || []).map(() => '<span>⚠ 버튼으로 바꾼 화면이 새로고침하면 사라집니다 (일부러 저장하지 않는 거라면 괜찮음)</span>'),
           ];
           return `<div class="q-item" style="flex-wrap:wrap">${chip(r.id)}<span class="muted">입력 ${r.filled}칸 · 클릭 ${r.clicked}번</span>${bad.join('') || '<span class="ok">✓ 문제 없음</span>'}</div>`;
         }).join('')}
+      </div>`) : ''}
+
+    ${report.viewport ? (report.viewport.error ? `<div class="q-group"><b>🖥 화면 크기별 점검을 끝내지 못했습니다</b><div class="q-item"><span class="muted">${esc(report.viewport.error)}</span></div></div>` : `
+      <div class="q-group ${report.viewport.errorCount ? 'error' : ''}">
+        <b>🖥 화면 크기별 점검 — ${report.viewport.sizes.map((v) => `${esc(v.label)} ${v.width}×${v.height}`).join(' · ')}, 모든 탭</b>
+        ${report.viewport.issues.map((v) => `<div class="q-item" style="flex-wrap:wrap">${v.region ? chip(v.region) : ''}<span class="muted">${esc([v.size, v.screen && v.screen + ' 탭'].filter(Boolean).join(' · ') || '모든 크기')}</span><span class="${v.level === 'error' ? 'err' : ''}">${v.level === 'error' ? '❌' : '⚠'} ${esc(v.message)}</span></div>`).join('') || '<div class="q-item"><span class="ok">✓ 가로 스크롤·넘침·잘림·안 그려지는 그림·작은 버튼·빈 칸·경계·탭 표시 모두 문제 없음</span></div>'}
+        ${report.viewport.shots?.length ? `<div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:6px">${report.viewport.shots.map((s) => `<a href="/api/verify-shot?file=${encodeURIComponent(s.file)}" target="_blank" title="${esc(s.size)} · ${esc(s.screen)}" style="text-align:center;font-size:11px"><img src="/api/verify-shot?file=${encodeURIComponent(s.file)}" alt="${esc(s.size)} ${esc(s.screen)} 화면" loading="lazy" style="width:160px;height:110px;object-fit:cover;object-position:top;border:1px solid #ccc;border-radius:6px;display:block"><span class="muted">${esc(s.size.split(' ').slice(0, -1).join(' '))} · ${esc(s.screen || '')}</span></a>`).join('')}</div>` : ''}
       </div>`) : ''}
 
     ${report.fieldErrors?.length ? `
@@ -111,6 +134,13 @@ export function renderVerifyReport(report, esc, chip) {
         <b>❌ 문법 및 중복 ID (${c.syntax}건)</b>
         ${(report.syntaxErrors || []).map((s) => `<div class="q-item">${chip(s.region)}<span class="mono">${esc(s.file)}</span><span class="err">${esc(s.error)}</span></div>`).join('')}
         ${(report.duplicateIds || []).map((d) => `<div class="q-item"><span class="mono">#${esc(d.id)}</span><span class="err">중복 영역: ${d.regions.map(esc).join(', ')}</span></div>`).join('')}
+      </div>` : ''}
+
+    ${(report.securityIssues?.length || report.storeKeyIssues?.length) ? `
+      <div class="q-group ${report.securityIssues?.length ? 'error' : ''}">
+        <b>🔒 보안 · 저장 키 (${(report.securityIssues || []).length + (report.storeKeyIssues || []).length}건)</b>
+        ${(report.securityIssues || []).map((i) => `<div class="q-item" style="flex-wrap:wrap">${chip(i.region)}<span class="err">❌ ${esc(i.detail)}</span><span class="muted">${esc(i.fix)}</span></div>`).join('')}
+        ${(report.storeKeyIssues || []).map((i) => `<div class="q-item" style="flex-wrap:wrap">${i.regions.map(chip).join('')}<span>⚠ ${esc(i.text)}</span></div>`).join('')}
       </div>` : ''}
 
     ${report.connectionIssues?.length ? `
@@ -164,6 +194,8 @@ export function buildVerifyFailureBriefing(report, checklist = [], rounds = 5) {
     for (const c of (report.connectionIssues || []).filter((i) => i.level === 'error')) {
       reasons.push({ kind: '영역 연결 불일치', text: c.text });
     }
+    for (const i of report.securityIssues || []) reasons.push({ kind: '보안', text: `[${i.region}] ${i.detail}` });
+    for (const v of (report.viewport && !report.viewport.error ? report.viewport.issues : []).filter((x) => x.level === 'error')) reasons.push({ kind: '화면 크기', text: `${v.region ? `[${v.region}] ` : ''}${v.size} ${v.screen || ''}: ${v.message}` });
     for (const l of (report.localCompatibility?.issues || []).filter((i) => i.level === 'error')) {
       reasons.push({ kind: '로컬 실행 불가', text: `[${l.region}] ${l.detail} — ${l.fix}` });
     }
@@ -176,6 +208,7 @@ export function buildVerifyFailureBriefing(report, checklist = [], rounds = 5) {
     for (const r of (report.explore && !report.explore.error ? report.explore.regions : [])) {
       for (const e of r.errors || []) reasons.push({ kind: '직접 조작 오류', text: `[${r.id}] ${e.when}: ${e.message}` });
       for (const v of r.reloadReverted || []) reasons.push({ kind: '새로고침 문제', text: `[${r.id}] ${v.message}` });
+      for (const v of r.security || []) reasons.push({ kind: '보안', text: `[${r.id}] ${v.message}` });
     }
     for (const e of report.fieldErrors || []) reasons.push({ kind: '실제 사용 오류', text: `${e.region ? `[${e.region}] ` : ''}${e.message} (${e.count || 1}회)` });
     for (const t of (report.browser?.testResults || []).filter((x) => !x.ok && !x.suspect)) {

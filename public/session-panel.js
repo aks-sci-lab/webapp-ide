@@ -80,7 +80,10 @@ export function extractFailingRegions(report, knownRegionIds = [], regionFiles =
   for (const r of ex?.regions || []) {
     for (const e of r.errors || []) add(r.id, `실제로 ${e.when} 했을 때 오류: ${e.message}`);
     for (const v of r.reloadReverted || []) add(r.id, `${v.message} (${v.when} 뒤). 앱 시작 때 저장된 값을 읽어 화면을 다시 그리세요 (공유 상태는 app.on('state:키') 로 받기)`);
+    for (const v of r.security || []) add(r.id, `보안 문제: ${v.message}`);
   }
+  for (const i of report?.securityIssues || []) add(i.region, `보안 문제: ${i.detail}. ${i.fix}`);
+  for (const v of (report?.viewport && !report.viewport.error ? report.viewport.issues : []).filter((x) => x.level === 'error')) add(v.region, `화면 크기 ${v.size}${v.screen ? ` · ${v.screen} 탭` : ''}: ${v.message}`);
   // 내보낸 앱을 실제로 쓰다가 난 오류 (📥 실사용 오류)
   for (const e of report?.fieldErrors || []) {
     add(e.region, `실제 사용 중 오류 ${e.count || 1}회: ${e.message}${e.recent?.length ? ` (직전 동작: ${e.recent.join(' → ')})` : ''}`);
